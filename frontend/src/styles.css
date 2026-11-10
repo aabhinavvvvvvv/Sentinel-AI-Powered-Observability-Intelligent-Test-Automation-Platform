@@ -156,6 +156,45 @@ header .badge {
   margin: 0;
 }
 
+button.active {
+  background: var(--text);
+  border-color: var(--text);
+  color: white;
+}
+
+h3 {
+  margin: 20px 0 8px;
+  font-size: 0.95rem;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+.card-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.card-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 2px 0;
+}
+
+details {
+  margin-top: 12px;
+}
+summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
 .add-form {
   display: flex;
   flex-wrap: wrap;

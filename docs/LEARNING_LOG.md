@@ -330,6 +330,72 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 10 — 2026-11-11 — Phase 2 step 1: stats API
+
+**What we built**
+- `GET /endpoints/:id/stats?window=24h|7d|30d`: uptime %, number of checks, P50/P95/P99 (successful checks only), failures by type.
+
+**Concepts (simple words)**
+- Uptime % only means something with its definition: which checks, which time window, how many.
+- Average vs percentiles: 90×200 ms + 10×3000 ms → average 480 ms (nobody saw that), P50 200 ms, P95 3000 ms.
+- `percentile_disc` picks a real value; `percentile_cont` blends neighbours.
+- SQL `FILTER (WHERE ...)` counts only some rows inside one query. `GROUP BY` makes a count per error type.
+- Test with made-up data where you know the right answer (`generate_series` inserts many rows at once).
+
+**Real data (first look)**
+- example.com: P50 ≈ 240 ms but P99 ≈ 600–700 ms. The slowest 1% take nearly 3× the normal time (tail latency).
+- Portfolio (#23): 84.21% uptime over 38 checks, 6 timeouts. 4 in a row opened incident 6 and a DOWN email was sent. Cause not known (measured fact only).
+- #24: the non-www portfolio URL again → 307 → 0% uptime (the redirect behaviour).
+
+**Verification**
+- typecheck OK, lint OK, build OK, 140/140 tests.
+
+**Next step**
+- Phase 2 step 2: time-series API for charts.
+
+---
+
+### Session 11 — 2026-11-11 — Phase 2 step 2: time-series API
+
+**What we built**
+- `GET /endpoints/:id/timeseries?window=...`: checks, uptime %, P50/P95 per bucket (1 h / 6 h / 1 day), oldest first.
+
+**Concepts (simple words)**
+- Bucket: a slice of time. Every check falls into exactly one.
+- `date_bin`: round a time down to its bucket (14:37 → 14:00).
+- `generate_series` + `LEFT JOIN`: list every bucket, even empty ones, so gaps show as "no data", never as "fine".
+- Why no P99 per hour: with ~60 checks, the "slowest 1 in 100" is just the single slowest check, which is too noisy.
+
+**Verification**
+- typecheck OK, lint OK, build OK, 147/147 tests.
+- Real data: the portfolio shows 2 hours with data (21:00 UTC 92.59%, 22:00 UTC 75%) and 23 gaps (it was added at 21:47).
+
+**Next step**
+- Phase 2 step 3: stats cards + chart on the detail page (Recharts).
+
+---
+
+### Session 12 — 2026-11-11 — Phase 2 step 3: performance panel + chart
+
+**What we built**
+- On the detail page: 24h/7d/30d buttons, cards (uptime with "X of N checks passed", P50/P95/P99, failures by type), a P50/P95 line chart with gaps, and a "show as table" view. It replaces the old "last 50 checks" summary (one uptime number per page, not two).
+
+**Concepts (simple words)**
+- Chart colours are checked with a validator (colour-blind safe), not chosen by eye.
+- Two lines need a legend, and their names written at the line ends. Text stays in normal text colour.
+- A gap in the line = no data. Never draw a line across it.
+- Tooltips are a bonus. Every value must also be readable without hovering (the table).
+- Turn off chart animation when the data refreshes every 10 s.
+- jsdom has no ResizeObserver, so tests provide a do-nothing stand-in.
+
+**Verification**
+- Frontend: typecheck OK, 19/19 tests, build OK (warning: bundle > 500 kB because of Recharts, accepted). Dev server serves the chart and Recharts. Real stats/timeseries come through the proxy. Not visually checked by Claude (no browser).
+
+**Next step**
+- The developer looks at the chart. Then commit Phase 2 and move to Phase 3 (API test suites).
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

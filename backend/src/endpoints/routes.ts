@@ -7,9 +7,12 @@
  *   DELETE /endpoints/:id   delete            → 204 | 400 | 404
  *   POST   /endpoints/:id/check  check it now and save the result → 200 | 400 | 404
  *   GET    /endpoints/:id/checks  check history, newest first      → 200 | 400 | 404
+ *   GET    /endpoints/:id/stats   uptime + P50/P95/P99 over a window → 200 | 400 | 404
+ *   GET    /endpoints/:id/timeseries  the same per hour/6h/day, for charts → 200 | 400 | 404
  */
 import { Router, type Response } from "express";
 import { z, type ZodError } from "zod";
+import { getEndpointStats, getEndpointTimeseries, WindowSchema } from "../analytics/stats.js";
 import { checkEndpoint } from "../checks/check-endpoint.js";
 import { listCheckResults, saveCheckResult } from "../checks/repository.js";
 import type { Database } from "../db.js";
@@ -73,6 +76,26 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     if (!limit.success) return sendValidationError(res, limit.error);
     if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, id);
     res.json(await listCheckResults(db, id, limit.data));
+  });
+
+  // Stats over a time window: uptime %, P50/P95/P99, failures by type. ?window=24h|7d|30d
+  router.get("/:id/stats", async (req, res) => {
+    const id = parseId(req.params.id);
+    if (id === null) return sendInvalidId(res);
+    const window = WindowSchema.safeParse(req.query.window);
+    if (!window.success) return sendValidationError(res, window.error);
+    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, id);
+    res.json(await getEndpointStats(db, id, window.data));
+  });
+
+  // The same numbers per time bucket, for charts. ?window=24h|7d|30d
+  router.get("/:id/timeseries", async (req, res) => {
+    const id = parseId(req.params.id);
+    if (id === null) return sendInvalidId(res);
+    const window = WindowSchema.safeParse(req.query.window);
+    if (!window.success) return sendValidationError(res, window.error);
+    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, id);
+    res.json(await getEndpointTimeseries(db, id, window.data));
   });
 
   router.delete("/:id", async (req, res) => {

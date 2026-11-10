@@ -50,6 +50,29 @@ export interface CheckResult {
   checked_at: string;
 }
 
+export type StatsRange = "24h" | "7d" | "30d";
+
+/** GET /endpoints/:id/stats. Exact definitions are in the README ("Metric definitions"). */
+export interface EndpointStats {
+  window: StatsRange;
+  from: string;
+  to: string;
+  checks_total: number;
+  checks_ok: number;
+  uptime_percent: number | null;
+  response_time_ms: { p50: number | null; p95: number | null; p99: number | null };
+  failures_by_type: { error_type: string; count: number }[];
+}
+
+export interface TimeseriesPoint {
+  time: string; // start of the bucket (UTC)
+  checks_total: number; // 0 = no data (a gap)
+  checks_ok: number;
+  uptime_percent: number | null;
+  p50_ms: number | null;
+  p95_ms: number | null;
+}
+
 export interface NewEndpoint {
   name: string;
   url: string;
@@ -92,4 +115,11 @@ export const api = {
   listChecks: (id: number, limit = 50) => request<CheckResult[]>(`/endpoints/${id}/checks?limit=${limit}`),
   listIncidentsFor: (id: number) => request<Incident[]>(`/incidents?endpoint_id=${id}`),
   checkNow: (id: number) => request<CheckResult>(`/endpoints/${id}/check`, { method: "POST" }),
+
+  // Analytics
+  getStats: (id: number, range: StatsRange) => request<EndpointStats>(`/endpoints/${id}/stats?window=${range}`),
+  getTimeseries: (id: number, range: StatsRange) =>
+    request<{ window: StatsRange; bucket: string; points: TimeseriesPoint[] }>(
+      `/endpoints/${id}/timeseries?window=${range}`,
+    ),
 };

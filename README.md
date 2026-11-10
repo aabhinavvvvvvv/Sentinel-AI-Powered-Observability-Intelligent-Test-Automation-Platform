@@ -4,9 +4,9 @@
 
 Sentinel monitors APIs and services, detects abnormal behaviour, helps engineers investigate failures, predicts degradation where historical data supports it, and prioritizes tests based on risk. Full scope: [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md).
 
-> **Status: early development (Milestone 7: dashboard).**
-> Register endpoints and Sentinel checks them automatically on their interval (Redis + BullMQ worker), with retries and SSRF protection. Every result is saved. After N failures in a row an incident is opened, and it is resolved on recovery. An email goes out for each (with retries if the mail server is down). A web dashboard shows every website's status and open incidents, lets you add, pause, and delete websites, and has a detail page per website (settings, recent checks, incident history, "check now").
-> Not yet: charts/analytics (P50/P95/P99), API test suites, ML (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
+> **Status: early development (Phase 2: historical analytics).**
+> Register endpoints and Sentinel checks them automatically on their interval (Redis + BullMQ worker), with retries and SSRF protection. Every result is saved. After N failures in a row an incident is opened, and it is resolved on recovery. An email goes out for each (with retries if the mail server is down). A web dashboard shows every website's status and open incidents, lets you add, pause, and delete websites, and has a detail page per website (settings, uptime and P50/P95/P99 over 24h/7d/30d, a response-time chart, recent checks, incident history, "check now").
+> Not yet: API test suites, anomaly detection/ML (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
 
 ## Repository layout
 
@@ -107,6 +107,8 @@ All configuration comes from environment variables, validated at startup by `bac
 | DELETE | `/endpoints/:id` | `204` | `400`, `404` |
 | POST | `/endpoints/:id/check` | `200` saved check result (even if the site is down) | `400`, `404` |
 | GET | `/endpoints/:id/checks?limit=50` | `200` check history, newest first (limit 1–500) | `400`, `404` |
+| GET | `/endpoints/:id/stats?window=24h\|7d\|30d` | `200` uptime %, P50/P95/P99, failures by type (see definitions below) | `400`, `404` |
+| GET | `/endpoints/:id/timeseries?window=24h\|7d\|30d` | `200` per-bucket checks, uptime %, P50/P95, oldest first (1 h / 6 h / 1 day buckets) | `400`, `404` |
 | GET | `/incidents?status=open\|resolved&endpoint_id=N&limit=100` | `200` incidents, newest first (all filters optional) | `400` |
 
 Example:
@@ -143,6 +145,13 @@ A check result looks like this:
 **Safety:** Sentinel refuses to visit private/internal addresses (localhost, 10.x, 192.168.x, 169.254.169.254, etc.) and does not follow redirects. This blocks SSRF attacks, and it also means you can't monitor services on your own machine or home network.
 
 **Tip: sites that redirect.** If a site answers 301/302/307/308 (e.g. `example.com` → `www.example.com`), Sentinel reports that status instead of following it. Register the **final** URL (the one your browser ends up on), or set `expected_status` to the redirect code.
+
+**Metric definitions** (used by `/stats`):
+- **Window:** the last 24 hours, 7 days, or 30 days, ending now. The response includes the exact `from`/`to`.
+- **Uptime %** = passed checks ÷ all checks in the window × 100, rounded to 2 decimals. Paused time and gaps contain no checks, so they count as neither up nor down. `checks_total` is returned so gaps are visible. `null` when there were no checks.
+- **P50 / P95 / P99** = response times of **successful checks only**, sorted. The value 50% / 95% / 99% of the way along (`percentile_disc`, always a real measured value). Failed checks (e.g. timeouts) are excluded here and counted in uptime instead.
+- **Failures by type** = failed checks in the window grouped by `error_type`.
+- **Time series buckets** (`/timeseries`): 1 hour (24h), 6 hours (7d), 1 day (30d), aligned to UTC. The first and last buckets are partial. Empty buckets are kept with `checks_total: 0` and `null` values: a gap means **no data**, not "up". Only P50/P95 per bucket (P99 of ~60 checks would just be the single slowest one).
 
 All errors use the shape `{"error":{"code":"...","message":"..."}}`. Validation errors add `details: [{field, message}]`. Timestamps are returned in UTC (ISO-8601, ending in `Z`).
 

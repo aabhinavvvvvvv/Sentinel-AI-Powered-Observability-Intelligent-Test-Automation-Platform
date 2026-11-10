@@ -197,6 +197,8 @@ These are proposed choices. Review the existing repository and explain any chang
 - Tests and security checks, especially SSRF protection.
 
 ### Phase 2 — Historical analytics
+> **Status (2026-11-11):** stats API (uptime %, P50/P95/P99, failures by type over 24h/7d/30d), time-series API, and the detail-page performance panel with chart ✅. Metric definitions are in the README. Endpoint comparisons and an incident timeline view are not built yet.
+
 - Uptime calculations.
 - Latency charts and percentiles.
 - Error rates and incident timelines.

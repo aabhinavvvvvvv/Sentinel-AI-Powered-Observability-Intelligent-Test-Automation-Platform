@@ -168,3 +168,19 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 **Trade-offs.** Polling makes requests even when nothing changed (fine at this scale). Hand-copied types can drift from the backend. No component library, so styling is basic. TypeScript pinned to 6 to match the backend (npm offered 7).
 
 **Revisit if.** Many users (then consider server-sent events/WebSockets), or types drift often (then a shared types package).
+
+---
+
+## ADR-011 — Analytics computed on request; Recharts for charts
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** Phase 2 needs uptime and percentiles over 24h/7d/30d and a chart.
+
+**Decision.** Compute stats and time-series buckets in SQL on each request (`percentile_disc`, `FILTER`, `date_bin`, `generate_series`). No pre-aggregated tables. Draw charts with Recharts. Speed percentiles use successful checks only. Gaps are kept as nulls.
+
+**Why.** It's the least code and always exact: no roll-up job to keep in sync. Data volume is small (about 43k rows per endpoint per 30 days, with an index on `(endpoint_id, checked_at)`). Recharts is the common React choice and declarative.
+
+**Trade-offs.** Each request scans the window's rows. Buckets are aligned to UTC (daily buckets split at UTC midnight). Recharts adds ~400 kB to the bundle.
+
+**Revisit if.** Stats queries get slow (add hourly roll-up tables), or local-time daily buckets are needed.

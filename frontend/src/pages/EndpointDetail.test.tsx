@@ -32,8 +32,17 @@ const check = (id: number, ok: boolean, ms: number) => ({
   checked_at: "2026-11-10T21:00:00Z",
 });
 
-/** A fake backend: answers depending on which address is requested. */
+/** A fake backend: answers depending on which address is requested (first matching prefix wins). */
 function fakeBackend(routes: Record<string, [number, unknown]>) {
+  // jsdom has no ResizeObserver; the chart only needs it to exist.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
@@ -55,8 +64,20 @@ function renderAt(path: string) {
 }
 
 describe("EndpointDetail", () => {
-  it("shows settings, a summary, recent checks, and incidents", async () => {
+  it("shows settings, performance, recent checks, and incidents", async () => {
     fakeBackend({
+      "/api/endpoints/23/stats": [
+        200,
+        {
+          window: "24h",
+          checks_total: 3,
+          checks_ok: 2,
+          uptime_percent: 66.67,
+          response_time_ms: { p50: 100, p95: 300, p99: 300 },
+          failures_by_type: [{ error_type: "unexpected_status", count: 1 }],
+        },
+      ],
+      "/api/endpoints/23/timeseries": [200, { window: "24h", bucket: "1 hour", points: [] }],
       "/api/endpoints/23/checks": [200, [check(3, true, 300), check(2, true, 100), check(1, false, 50)]],
       "/api/endpoints/23": [200, endpoint],
       "/api/incidents": [
@@ -78,9 +99,8 @@ describe("EndpointDetail", () => {
 
     expect(await screen.findByRole("heading", { name: "Portfolio" })).toBeTruthy();
     expect(screen.getByText("UP")).toBeTruthy(); // newest check passed, no open incident
-    // 2 of 3 passed; average counts only successful checks: (300 + 100) / 2 = 200
-    expect(screen.getByText("2 of the last 3 checks passed (67%)")).toBeTruthy();
-    expect(screen.getByText(/average response 200 ms/)).toBeTruthy();
+    expect(await screen.findByText("66.67%")).toBeTruthy(); // performance panel loaded
+    expect(screen.getByText("2 of 3 checks passed")).toBeTruthy();
     expect(screen.getAllByText("OK")).toHaveLength(2);
     expect(screen.getAllByText("FAIL")).toHaveLength(1);
     expect(screen.getByText("2m 30s")).toBeTruthy(); // incident duration

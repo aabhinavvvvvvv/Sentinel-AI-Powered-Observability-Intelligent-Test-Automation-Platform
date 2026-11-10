@@ -49,6 +49,14 @@ export function formatDuration(ms: number): string {
   return `${seconds}s`;
 }
 
+/** A chart bucket's start time as a short label, in the viewer's time zone. */
+export function bucketLabel(iso: string, range: "24h" | "7d" | "30d"): string {
+  const date = new Date(iso);
+  if (range === "24h") return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (range === "7d") return date.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 /** Show a UTC timestamp in the viewer's own time zone, e.g. "11/11/2026, 02:38:33". */
 export function localTime(iso: string): string {
   return new Date(iso).toLocaleString();

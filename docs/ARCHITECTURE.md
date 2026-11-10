@@ -258,7 +258,20 @@ flowchart LR
 | `frontend/src/components/AddEndpointForm.tsx` | Add-website form; shows the backend's validation messages |
 | `frontend/src/pages/EndpointDetail.tsx` | `/endpoints/:id`: settings, Check now / Pause, summary of the last 50 checks, recent checks table, incident history |
 
-The detail page loads the endpoint, its last 50 checks and its incidents in parallel (`Promise.all`) in one polling cycle. Its summary states exactly what it counts ("X of the last N checks passed"; average response uses successful checks only). Proper time-window uptime and percentiles are Phase 2.
+| `frontend/src/components/StatsPanel.tsx` | 24h/7d/30d switch, cards (uptime with "X of N checks passed", P50/P95/P99, failures by type), chart, table view, metric definitions |
+| `frontend/src/components/LatencyChart.tsx` | Recharts line chart of P50/P95 per bucket |
+
+The detail page loads the endpoint, its last 50 checks and its incidents in parallel (`Promise.all`) in one polling cycle. `StatsPanel` polls `/stats` + `/timeseries` for the chosen range and ignores stale data from the previous range while switching.
+
+**Chart rules applied:**
+- Series colours are slots 1–2 of the reference data-viz palette (`#2a78d6` P50, `#eb6834` P95). Validated on the white card: colour-blind ΔE 24.7, both ≥ 3:1.
+- 2px lines, 8px dots with a 2px white ring (so a lone bucket is visible), solid hairline grid, horizontal only.
+- Legend plus end-of-line labels. All chart text uses text colours, not series colours.
+- `connectNulls={false}`, so gaps show "no data". Animation off (it would replay every 10 s).
+- A hover tooltip, plus a `<details>` table with every value, so nothing is hover-only.
+- Light theme only (the app has no dark mode yet).
+
+Production bundle is ~500+ kB, mostly Recharts. Accepted for now; code-split if load time matters.
 
 - **One request for the table:** `GET /endpoints` includes each endpoint's `last_check` and `open_incident` (sub-queries with `row_to_json`), which avoids one request per row.
 - **Status words:** `down` = an incident is open. `failing` = the last check failed but the threshold isn't reached yet. Facts first, no guessing.
@@ -267,7 +280,26 @@ The detail page loads the endpoint, its last 50 checks and its incidents in para
 - **Types are duplicated** in `api.ts` (not shared with the backend). It's simple, but they must be kept in sync by hand.
 - No CORS needed in development thanks to the Vite proxy. A production deployment must serve the page and API from one origin (or add CORS): Phase 8.
 
-## 9. Local infrastructure
+## 9. Analytics (Phase 2)
+
+### Step 1: `GET /endpoints/:id/stats?window=24h|7d|30d` (`src/analytics/stats.ts`)
+
+Two SQL queries over `check_results` for one endpoint where `checked_at > now() - interval`. Both use the existing `(endpoint_id, checked_at DESC)` index:
+1. A summary with `count(*)`, `count(*) FILTER (WHERE ok)`, and `percentile_disc(0.50/0.95/0.99) WITHIN GROUP (ORDER BY response_time_ms) FILTER (WHERE ok)`.
+2. Failures `GROUP BY error_type`.
+
+Exact metric definitions are in the README. Design points:
+- `percentile_disc` (a real measured value) instead of `percentile_cont` (interpolated).
+- Speed percentiles exclude failed checks, so timeouts don't masquerade as "slow responses".
+### Step 2: `GET /endpoints/:id/timeseries` (`getEndpointTimeseries`)
+
+One SQL query: `generate_series` makes every bucket start in the window, `date_bin(bucket, checked_at, '2000-01-01')` rounds each check down to its bucket, and a `LEFT JOIN` keeps empty buckets (0 checks, nulls) so charts show gaps honestly. Buckets: 1 h / 6 h / 1 day for 24h / 7d / 30d (25 / 29 / 31 points incl. partial ends), aligned to UTC. Daily buckets therefore split at UTC midnight, not local midnight (known limitation).
+
+### Both
+
+- Computed on request (no pre-aggregated tables). At about 1,440 rows/day/endpoint a 30-day window is about 43k rows per endpoint, which is fine for now. Revisit with roll-up tables if it becomes slow.
+
+## 10. Local infrastructure
 
 `docker-compose.yml` runs, all on `127.0.0.1` only:
 - `postgres:16-alpine`: named volume `pgdata`, `pg_isready` healthcheck.

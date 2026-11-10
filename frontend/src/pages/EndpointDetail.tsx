@@ -1,10 +1,11 @@
 /**
- * One website: settings, a short summary, recent checks, and incident history.
+ * One website: settings, performance (stats + chart), recent checks, and incident history.
  * Address: /endpoints/:id. Refreshes every 10 seconds.
  */
 import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api } from "../api";
+import { StatsPanel } from "../components/StatsPanel";
 import { endpointStatus, formatDuration, localTime, STATUS_LABEL, timeAgo } from "../status";
 import { usePolling } from "../usePolling";
 
@@ -63,10 +64,6 @@ export function EndpointDetail() {
     last_check: checks[0] ?? null,
     open_incident: incidents.find((i) => i.resolved_at === null) ?? null,
   });
-  const passed = checks.filter((c) => c.ok).length;
-  const okTimes = checks.filter((c) => c.ok).map((c) => c.response_time_ms);
-  const avgMs = okTimes.length > 0 ? Math.round(okTimes.reduce((a, b) => a + b, 0) / okTimes.length) : null;
-
   return (
     <main>
       {back}
@@ -103,20 +100,7 @@ export function EndpointDetail() {
         </dl>
       </section>
 
-      <section>
-        <h2>Summary</h2>
-        {checks.length === 0 ? (
-          <p className="muted">No checks yet.</p>
-        ) : (
-          <p>
-            {/* Say exactly what we counted, so the number can't be misread. */}
-            <strong>
-              {passed} of the last {checks.length} checks passed ({Math.round((passed / checks.length) * 100)}%)
-            </strong>
-            {avgMs !== null && <> · average response {avgMs} ms (successful checks only)</>}
-          </p>
-        )}
-      </section>
+      <StatsPanel endpointId={id} />
 
       <section>
         <h2>Recent checks</h2>

@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"], // DOM = browser things like document and fetch
+    "module": "ESNext",
+    "moduleResolution": "Bundler", // Vite resolves imports, so no ".js" endings needed here
+    "jsx": "react-jsx", // lets us write <div> inside .tsx files
+    "types": ["vite/client"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true // Vite builds the files; tsc only checks types
+  },
+  "include": ["src", "vite.config.ts"]
+}

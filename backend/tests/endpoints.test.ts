@@ -82,6 +82,23 @@ describe("GET /endpoints and /endpoints/:id", () => {
     expect(res.body.map((e: { name: string }) => e.name)).toEqual(["A", "B"]);
   });
 
+  it("includes each endpoint's latest check and open incident", async () => {
+    await create(blockedSite);
+    await create(valid);
+    await request(app).post("/endpoints/1/check"); // older
+    await request(app).post("/endpoints/1/check"); // newest
+    await db.query(
+      "INSERT INTO incidents (endpoint_id, started_at, error_type) VALUES (1, '2026-01-01T10:00:00Z', 'blocked')",
+    );
+
+    const [first, second] = (await request(app).get("/endpoints")).body;
+    expect(first.last_check).toMatchObject({ ok: false, error_type: "blocked" });
+    expect(first.open_incident).toMatchObject({ error_type: "blocked" });
+    expect(new Date(first.open_incident.started_at).toISOString()).toBe("2026-01-01T10:00:00.000Z");
+    expect(second.last_check).toBeNull(); // never checked
+    expect(second.open_incident).toBeNull();
+  });
+
   it("returns one endpoint by id", async () => {
     await create(valid);
     const res = await request(app).get("/endpoints/1");

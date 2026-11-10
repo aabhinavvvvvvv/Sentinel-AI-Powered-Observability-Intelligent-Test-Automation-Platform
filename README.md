@@ -4,17 +4,19 @@
 
 Sentinel monitors APIs and services, detects abnormal behaviour, helps engineers investigate failures, predicts degradation where historical data supports it, and prioritizes tests based on risk. Full scope: [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md).
 
-> **Status: early development (Milestone 6: email alerts).**
-> Register endpoints and Sentinel checks them automatically on their interval (Redis + BullMQ worker), with retries and SSRF protection. Every result is saved. After N failures in a row an incident is opened, and it is resolved on recovery. An email goes out for each (with retries if the mail server is down).
-> Not yet: dashboard, analytics, testing, ML (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
+> **Status: early development (Milestone 7: dashboard).**
+> Register endpoints and Sentinel checks them automatically on their interval (Redis + BullMQ worker), with retries and SSRF protection. Every result is saved. After N failures in a row an incident is opened, and it is resolved on recovery. An email goes out for each (with retries if the mail server is down). A web dashboard shows every website's status and open incidents, lets you add, pause, and delete websites, and has a detail page per website (settings, recent checks, incident history, "check now").
+> Not yet: charts/analytics (P50/P95/P99), API test suites, ML (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
 
 ## Repository layout
 
 ```
 sentinel/
-├── backend/            Node.js + TypeScript + Express API (later also the background worker)
+├── backend/            Node.js + TypeScript + Express API and background worker
 │   ├── src/            application code
 │   └── tests/          Vitest + Supertest tests
+├── frontend/           React + TypeScript dashboard (Vite)
+│   └── src/            pages, components, API client, tests
 ├── docs/               blueprint, architecture, decisions, learning log
 ├── docker-compose.yml  local dependencies (PostgreSQL, Redis, Mailpit)
 └── .env.example        configuration template (copy to .env)
@@ -46,7 +48,14 @@ npm run dev
 
 # 6. In a second terminal, run the worker (scheduled checks, incidents, alert emails).
 npm run dev:worker
+
+# 7. In a third terminal, run the dashboard, then open http://localhost:5173
+cd ../frontend
+npm install
+npm run dev
 ```
+
+The dashboard calls `/api/...`. Vite's dev server forwards those requests to the backend on port 3000, so the API must be running.
 
 **Alert emails (local):** emails go to **Mailpit**, a fake inbox. Open http://localhost:8025 to read them. Nothing is really sent. Recipients come from `ALERT_EMAIL_TO` in `.env` (comma-separated; leave empty to turn alerts off). For real email, point `SMTP_URL` at a real SMTP provider (e.g. `smtps://user:password@smtp.example.com:465`). Keep that in `.env`, never in Git.
 
@@ -73,6 +82,15 @@ If PostgreSQL is stopped (`docker compose stop postgres`), the same request retu
 | `npm run build` | Compile `src/` to JavaScript in `dist/` |
 | `npm start` / `npm run start:worker` | Run the compiled API / worker |
 
+## Frontend scripts (run inside `frontend/`)
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dashboard dev server on http://localhost:5173 with instant reload |
+| `npm test` | Component and helper tests (jsdom, fake `fetch`; no backend needed) |
+| `npm run typecheck` | Type-check |
+| `npm run build` | Type-check and build static files into `dist/` |
+
 ## Configuration
 
 All configuration comes from environment variables, validated at startup by `backend/src/config.ts`. The app refuses to start with a clear message if anything is missing or invalid. See [.env.example](.env.example) for every variable. **Never commit `.env`.**
@@ -83,7 +101,7 @@ All configuration comes from environment variables, validated at startup by `bac
 |---|---|---|---|
 | GET | `/healthz` | `200` DB reachable | `503` DB unreachable |
 | POST | `/endpoints` | `201` created endpoint | `400` validation |
-| GET | `/endpoints` | `200` list | |
+| GET | `/endpoints` | `200` list; each item also has `last_check` and `open_incident` (or null) | |
 | GET | `/endpoints/:id` | `200` endpoint | `400` bad id, `404` |
 | PATCH | `/endpoints/:id` | `200` updated endpoint | `400`, `404` |
 | DELETE | `/endpoints/:id` | `204` | `400`, `404` |
@@ -123,6 +141,8 @@ A check result looks like this:
 `error_type` is one of `blocked`, `timeout`, `dns`, `connection_refused`, `tls`, `unexpected_status`, `network`.
 
 **Safety:** Sentinel refuses to visit private/internal addresses (localhost, 10.x, 192.168.x, 169.254.169.254, etc.) and does not follow redirects. This blocks SSRF attacks, and it also means you can't monitor services on your own machine or home network.
+
+**Tip: sites that redirect.** If a site answers 301/302/307/308 (e.g. `example.com` → `www.example.com`), Sentinel reports that status instead of following it. Register the **final** URL (the one your browser ends up on), or set `expected_status` to the redirect code.
 
 All errors use the shape `{"error":{"code":"...","message":"..."}}`. Validation errors add `details: [{field, message}]`. Timestamps are returned in UTC (ISO-8601, ending in `Z`).
 

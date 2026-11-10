@@ -152,3 +152,19 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 **Trade-offs.** More moving parts than a direct send. Alerts can arrive a few seconds late. After 5 failed attempts the alert is dropped (kept in the failed list, logged). A global recipient list, no per-user settings yet. "Check now" no longer opens/closes incidents immediately.
 
 **Revisit if.** We add users (per-user recipients) or other channels (Slack, webhooks).
+
+---
+
+## ADR-010 — Dashboard: Vite + React Router, plain CSS, polling, dev proxy
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** First UI. It should be simple to read and build.
+
+**Decision.** React 19 + TypeScript 6 built with Vite. React Router for page addresses. Plain CSS. Data refreshed by polling every 10 s with a small `usePolling` hook (no data-fetching library). Vite's dev proxy forwards `/api` to the backend. Frontend types are hand-copied from the backend.
+
+**Why.** Fewest new concepts. Polling every 10 s is plenty for checks that run every 30 s or more. The proxy avoids CORS during development.
+
+**Trade-offs.** Polling makes requests even when nothing changed (fine at this scale). Hand-copied types can drift from the backend. No component library, so styling is basic. TypeScript pinned to 6 to match the backend (npm offered 7).
+
+**Revisit if.** Many users (then consider server-sent events/WebSockets), or types drift often (then a shared types package).

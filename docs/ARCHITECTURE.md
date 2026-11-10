@@ -240,7 +240,34 @@ flowchart LR
 - **Recipients:** global list `ALERT_EMAIL_TO`; empty = alerts off. Per-user preferences need authentication (later).
 - The job carries only `incidentId` + `kind`. The worker reads current data from Postgres. If the incident was deleted, the alert is skipped.
 
-## 8. Local infrastructure
+## 8. Dashboard (Milestone 7)
+
+```mermaid
+flowchart LR
+    B[Browser<br/>localhost:5173] -->|page + /api/... requests| V[Vite dev server]
+    V -->|/api/endpoints → /endpoints| API[Express API :3000]
+```
+
+| File | Job |
+|---|---|
+| `frontend/src/main.tsx` | Mounts React, defines page addresses (React Router) |
+| `frontend/src/api.ts` | Typed `fetch` wrapper for every backend call; `ApiError` carries validation details |
+| `frontend/src/usePolling.ts` | Hook: load now, then every 10 s |
+| `frontend/src/status.ts` | Pure helpers: status word (up/down/failing/paused/pending), "5 min ago", local time |
+| `frontend/src/pages/Overview.tsx` | Open incidents, websites table with Pause/Resume/Delete, add form |
+| `frontend/src/components/AddEndpointForm.tsx` | Add-website form; shows the backend's validation messages |
+| `frontend/src/pages/EndpointDetail.tsx` | `/endpoints/:id`: settings, Check now / Pause, summary of the last 50 checks, recent checks table, incident history |
+
+The detail page loads the endpoint, its last 50 checks and its incidents in parallel (`Promise.all`) in one polling cycle. Its summary states exactly what it counts ("X of the last N checks passed"; average response uses successful checks only). Proper time-window uptime and percentiles are Phase 2.
+
+- **One request for the table:** `GET /endpoints` includes each endpoint's `last_check` and `open_incident` (sub-queries with `row_to_json`), which avoids one request per row.
+- **Status words:** `down` = an incident is open. `failing` = the last check failed but the threshold isn't reached yet. Facts first, no guessing.
+- **Validation lives in the backend only.** The form shows the API's error messages.
+- **Times:** the API sends UTC, and the browser shows local time.
+- **Types are duplicated** in `api.ts` (not shared with the backend). It's simple, but they must be kept in sync by hand.
+- No CORS needed in development thanks to the Vite proxy. A production deployment must serve the page and API from one origin (or add CORS): Phase 8.
+
+## 9. Local infrastructure
 
 `docker-compose.yml` runs, all on `127.0.0.1` only:
 - `postgres:16-alpine`: named volume `pgdata`, `pg_isready` healthcheck.

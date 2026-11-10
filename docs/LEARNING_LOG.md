@@ -283,6 +283,53 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 8 — 2026-11-11 — M7 step 1: overview page
+
+**What we built**
+- `frontend/` with React + Vite. The overview page shows open incidents, a table of websites with status badges, and Pause/Resume/Delete buttons, plus a form to add a website. Refreshes every 10 s.
+- Backend: `GET /endpoints` now also returns each website's latest check and open incident.
+
+**Concepts (simple words)**
+- Component: a reusable piece of the page (the form, the table).
+- State (`useState`): values that change and redraw the page when they do.
+- Hook (`usePolling`): reusable behaviour, here "load now and every 10 s".
+- Proxy: Vite passes `/api/...` to the backend, so the browser sees one website.
+- The backend is the only judge of valid input; the form just shows its messages.
+- UTC in the API, local time on the screen.
+- Testing UI with a fake browser (jsdom) and a fake `fetch`.
+
+**Verification**
+- Backend: 130/130 tests. Frontend: typecheck OK, 11/11 tests, build OK.
+- Dev server: page and source files served (HTTP 200), `/api/endpoints` forwarded correctly and returned the developer's 3 endpoints. Not visually checked by Claude (no browser); the developer is to look at it.
+
+**Next step**
+- M7 step 2: endpoint detail page (recent checks, incident history).
+
+---
+
+### Session 9 — 2026-11-11 — M7 step 2: detail page (+ two real-world puzzles)
+
+**What we built**
+- `/endpoints/:id` page: settings, Check now / Pause, "X of the last N checks passed", recent checks, incident history. Names on the overview link to it.
+
+**Concepts (simple words)**
+- Route with a placeholder (`/endpoints/:id`) and reading it with `useParams`.
+- Loading several things at once with `Promise.all`.
+- `useCallback` so the polling timer doesn't restart on every redraw.
+- Always say what a number counts ("of the last 50 checks"), so it can't be misread.
+
+**Real-world puzzles solved**
+1. The portfolio showed DOWN while it opened fine in the browser. Cause: the site answers 307 → `www.` address. Browsers follow redirects; Sentinel deliberately doesn't (SSRF safety). Fix without code: register the final URL. README tip added. Following redirects safely was offered and declined as not needed.
+2. Incidents "disappeared". Cause: the endpoint had been deleted and re-added. Deleting cascades to its checks and incidents (by design). Found by reading `created_at` and the check history directly in Postgres.
+
+**Verification**
+- Frontend: typecheck OK, 16/16 tests, build OK. Dev server: `/endpoints/23` serves the app (SPA fallback), and the real data for endpoint 23 came through the proxy.
+
+**Next step**
+- Phase 2: historical analytics (uptime over a time window, P50/P95/P99, charts).
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

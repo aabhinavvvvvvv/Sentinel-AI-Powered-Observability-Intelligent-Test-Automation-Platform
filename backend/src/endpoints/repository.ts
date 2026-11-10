@@ -32,6 +32,31 @@ export async function listEndpoints(db: Database): Promise<Endpoint[]> {
   return db.query<Endpoint>("SELECT * FROM endpoints ORDER BY id");
 }
 
+/**
+ * Like listEndpoints, plus each endpoint's newest check and its open incident (or null).
+ * Used by the dashboard, so it can show everything with ONE request.
+ * row_to_json turns the small sub-query result into a JSON object.
+ */
+export async function listEndpointsWithStatus(db: Database) {
+  return db.query<
+    Endpoint & {
+      last_check: { ok: boolean; status_code: number | null; response_time_ms: number; error_type: string | null; checked_at: string } | null;
+      open_incident: { id: number; started_at: string; error_type: string; error_message: string | null } | null;
+    }
+  >(
+    `SELECT e.*,
+       (SELECT row_to_json(c) FROM (
+          SELECT ok, status_code, response_time_ms, error_type, checked_at
+          FROM check_results WHERE endpoint_id = e.id
+          ORDER BY checked_at DESC, id DESC LIMIT 1) c) AS last_check,
+       (SELECT row_to_json(i) FROM (
+          SELECT id, started_at, error_type, error_message
+          FROM incidents WHERE endpoint_id = e.id AND resolved_at IS NULL) i) AS open_incident
+     FROM endpoints e
+     ORDER BY e.id`,
+  );
+}
+
 export async function getEndpoint(db: Database, id: number): Promise<Endpoint | null> {
   const rows = await db.query<Endpoint>("SELECT * FROM endpoints WHERE id = $1", [id]);
   return rows[0] ?? null;

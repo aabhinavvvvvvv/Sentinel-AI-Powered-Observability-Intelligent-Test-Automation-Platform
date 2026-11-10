@@ -30,8 +30,9 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     res.status(201).json(endpoint);
   });
 
+  // Each endpoint also includes `last_check` and `open_incident` (null if none), for the dashboard.
   router.get("/", async (_req, res) => {
-    res.json(await repo.listEndpoints(db));
+    res.json(await repo.listEndpointsWithStatus(db));
   });
 
   router.get("/:id", async (req, res) => {

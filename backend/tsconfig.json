@@ -1,0 +1,27 @@
+{
+  // Base config: used by your editor, `npm run typecheck`, and as the parent of tsconfig.build.json.
+  "compilerOptions": {
+    // Output modern JavaScript; Node 22 understands ES2023 natively.
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    // Use Node's real ES-module rules (this is why imports end in ".js" — see docs/LEARNING_LOG.md).
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // Only load the type definitions we name (Node's built-ins), not every @types package.
+    "types": ["node"],
+
+    // --- Safety: catch as many bugs as possible at compile time ---
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  },
+  "include": ["src", "tests"]
+}

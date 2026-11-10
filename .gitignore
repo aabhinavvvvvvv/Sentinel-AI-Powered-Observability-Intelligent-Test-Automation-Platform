@@ -1,0 +1,18 @@
+# Dependencies (re-created by `npm install`; never commit them)
+node_modules/
+
+# Build output (re-created by `npm run build`)
+dist/
+coverage/
+
+# Secrets: real environment files stay on your machine only.
+.env
+.env.*
+!.env.example
+
+# Windows "downloaded from the internet" metadata files
+*:Zone.Identifier
+
+# Logs and OS noise
+*.log
+.DS_Store

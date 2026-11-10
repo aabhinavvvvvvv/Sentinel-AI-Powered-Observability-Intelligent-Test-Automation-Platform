@@ -10,10 +10,20 @@ import type { Endpoint, EndpointChanges, NewEndpoint } from "./schemas.js";
 export async function createEndpoint(db: Database, e: NewEndpoint): Promise<Endpoint> {
   const rows = await db.query<Endpoint>(
     `INSERT INTO endpoints
-       (name, url, method, interval_seconds, timeout_ms, expected_status, max_retries, paused)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (name, url, method, interval_seconds, timeout_ms, expected_status, max_retries, failure_threshold, paused)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [e.name, e.url, e.method, e.interval_seconds, e.timeout_ms, e.expected_status, e.max_retries, e.paused],
+    [
+      e.name,
+      e.url,
+      e.method,
+      e.interval_seconds,
+      e.timeout_ms,
+      e.expected_status,
+      e.max_retries,
+      e.failure_threshold,
+      e.paused,
+    ],
   );
   return rows[0]!; // INSERT ... RETURNING always returns exactly one row
 }

@@ -23,5 +23,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # Redis holds BullMQ's job timers ("check endpoint 5 every 60s").
+  # No volume on purpose: if Redis loses its data, the worker rebuilds
+  # every timer from PostgreSQL (the source of truth) when it starts.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Mailpit: a FAKE email server for development. It accepts every email and
+  # shows it in a web inbox at http://localhost:8025. Nothing is really sent.
+  mailpit:
+    image: axllent/mailpit:v1.33.1
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025" # SMTP: where Sentinel sends emails
+      - "127.0.0.1:${MAILPIT_WEB_PORT:-8025}:8025" # web inbox
+
 volumes:
   pgdata:

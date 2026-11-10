@@ -10,7 +10,8 @@ import { silentLogger } from "./helpers.js";
 function buildApp(ping: (timeoutMs: number) => Promise<void>) {
   // A fake database: only ping() matters for these tests.
   const db = { ping, query: async () => [], close: async () => {} };
-  return createApp({ db, logger: silentLogger, healthcheckDbTimeoutMs: 1234 });
+  const scheduler = { schedule: async () => {}, unschedule: async () => {} };
+  return createApp({ db, scheduler, logger: silentLogger, healthcheckDbTimeoutMs: 1234 });
 }
 
 describe("GET /healthz", () => {

@@ -14,6 +14,7 @@ const fields = {
   timeout_ms: z.number().int().min(1000).max(30_000),
   expected_status: z.number().int().min(100).max(599),
   max_retries: z.number().int().min(0).max(3),
+  failure_threshold: z.number().int().min(1).max(10), // failed checks in a row that open an incident
   paused: z.boolean(),
 };
 
@@ -26,6 +27,7 @@ export const CreateEndpointSchema = z.strictObject({
   timeout_ms: fields.timeout_ms.default(5000),
   expected_status: fields.expected_status.default(200),
   max_retries: fields.max_retries.default(0),
+  failure_threshold: fields.failure_threshold.default(3),
   paused: fields.paused.default(false),
 });
 

@@ -20,6 +20,25 @@ const EnvSchema = z.object({
     protocol: /^postgres(ql)?$/,
     error: "must be a postgres:// or postgresql:// URL",
   }),
+  REDIS_URL: z
+    .url({ protocol: /^rediss?$/, error: "must be a redis:// or rediss:// URL" })
+    .default("redis://localhost:6379"),
+  // Email alerts. Locally this points at Mailpit (a fake inbox in Docker).
+  SMTP_URL: z
+    .url({ protocol: /^smtps?$/, error: "must be an smtp:// or smtps:// URL" })
+    .default("smtp://localhost:1025"),
+  ALERT_EMAIL_FROM: z.string().min(1).default("Sentinel <sentinel@localhost>"),
+  // Comma-separated list of who gets alerts. Empty = alerts turned off.
+  ALERT_EMAIL_TO: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((address) => address.trim())
+        .filter((address) => address !== ""),
+    )
+    .pipe(z.array(z.email({ error: "must be a comma-separated list of email addresses" }))),
   HEALTHCHECK_DB_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(2000),
 });
 

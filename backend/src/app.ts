@@ -9,18 +9,20 @@
 import express, { type Express } from "express";
 import { pinoHttp } from "pino-http";
 import type { Database } from "./db.js";
-import { endpointsRouter } from "./endpoints/routes.js";
+import { endpointsRouter, type EndpointScheduler } from "./endpoints/routes.js";
+import { incidentsRouter } from "./incidents/routes.js";
 import type { Logger } from "./logger.js";
 import { errorHandler, notFound } from "./middleware/errors.js";
 import { healthRouter } from "./routes/health.js";
 
 export interface AppDeps {
   db: Database;
+  scheduler: EndpointScheduler;
   logger: Logger;
   healthcheckDbTimeoutMs: number;
 }
 
-export function createApp({ db, logger, healthcheckDbTimeoutMs }: AppDeps): Express {
+export function createApp({ db, scheduler, logger, healthcheckDbTimeoutMs }: AppDeps): Express {
   const app = express();
 
   // Don't advertise "X-Powered-By: Express" (free information for attackers).
@@ -32,7 +34,8 @@ export function createApp({ db, logger, healthcheckDbTimeoutMs }: AppDeps): Expr
 
   // 3. routes
   app.use(healthRouter({ db, logger, dbTimeoutMs: healthcheckDbTimeoutMs }));
-  app.use("/endpoints", endpointsRouter(db));
+  app.use("/endpoints", endpointsRouter(db, scheduler));
+  app.use("/incidents", incidentsRouter(db));
 
   app.use(notFound); // 4. nothing matched → 404
   app.use(errorHandler(logger)); // 5. anything threw → JSON error

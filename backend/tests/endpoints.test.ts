@@ -3,17 +3,19 @@
  * Every test starts from an empty `endpoints` table.
  */
 import request from "supertest";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { createDatabase } from "../src/db.js";
-import { silentLogger } from "./helpers.js";
+import { resetDb, silentLogger } from "./helpers.js";
 
 const db = createDatabase(process.env.TEST_DATABASE_URL!, silentLogger);
-const app = createApp({ db, logger: silentLogger, healthcheckDbTimeoutMs: 1000 });
+// A fake scheduler that only records calls (the real one is tested in scheduler.test.ts).
+const scheduler = { schedule: vi.fn(async () => {}), unschedule: vi.fn(async () => {}) };
+const app = createApp({ db, scheduler, logger: silentLogger, healthcheckDbTimeoutMs: 1000 });
 
 beforeEach(async () => {
-  // RESTART IDENTITY resets ids, so the first endpoint in each test has id 1.
-  await db.query("TRUNCATE endpoints RESTART IDENTITY");
+  vi.clearAllMocks();
+  await resetDb(db); // empty tables; the first endpoint in each test gets id 1
 });
 afterAll(async () => {
   await db.close();
@@ -37,6 +39,7 @@ describe("POST /endpoints", () => {
       timeout_ms: 5000,
       expected_status: 200,
       max_retries: 0,
+      failure_threshold: 3,
       paused: false,
     });
     // Timestamps come back as ISO-8601 strings in UTC, e.g. "2026-11-11T13:00:00.000Z".
@@ -136,16 +139,90 @@ describe("PATCH /endpoints/:id", () => {
   });
 });
 
+// A localhost URL is blocked instantly by the SSRF guard, so these tests need no internet.
+const blockedSite = { ...valid, url: "http://localhost:5432/" };
+
+describe("scheduling (timers are kept in sync with the API)", () => {
+  it("creating an endpoint starts its timer", async () => {
+    await create(valid);
+    expect(scheduler.schedule).toHaveBeenCalledWith(expect.objectContaining({ id: 1, paused: false }));
+  });
+
+  it("updating an endpoint updates its timer (e.g. pausing it)", async () => {
+    await create(valid);
+    await request(app).patch("/endpoints/1").send({ paused: true });
+    expect(scheduler.schedule).toHaveBeenLastCalledWith(expect.objectContaining({ id: 1, paused: true }));
+  });
+
+  it("deleting an endpoint stops its timer", async () => {
+    await create(valid);
+    await request(app).delete("/endpoints/1");
+    expect(scheduler.unschedule).toHaveBeenCalledWith(1);
+  });
+
+  it("invalid requests don't touch timers", async () => {
+    await create({ url: "nope" });
+    await request(app).patch("/endpoints/999").send({ name: "x" });
+    await request(app).delete("/endpoints/999");
+    expect(scheduler.schedule).not.toHaveBeenCalled();
+    expect(scheduler.unschedule).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /endpoints/:id/check", () => {
-  it("checks the endpoint and returns the result (blocked here: it's localhost)", async () => {
-    await create({ ...valid, url: "http://localhost:5432/" });
+  it("checks the endpoint, saves the result, and returns it", async () => {
+    await create(blockedSite);
     const res = await request(app).post("/endpoints/1/check");
     expect(res.status).toBe(200); // our API worked, even though the check failed
-    expect(res.body).toMatchObject({ ok: false, error_type: "blocked" });
+    expect(res.body).toMatchObject({ id: 1, endpoint_id: 1, ok: false, error_type: "blocked" });
   });
 
   it("returns 404 for an id that does not exist", async () => {
     expect((await request(app).post("/endpoints/999/check")).status).toBe(404);
+  });
+});
+
+describe("GET /endpoints/:id/checks", () => {
+  it("returns the saved history, newest first", async () => {
+    await create(blockedSite);
+    await request(app).post("/endpoints/1/check");
+    await request(app).post("/endpoints/1/check");
+
+    const res = await request(app).get("/endpoints/1/checks");
+    expect(res.status).toBe(200);
+    expect(res.body.map((r: { id: number }) => r.id)).toEqual([2, 1]);
+  });
+
+  it("only returns results for the requested endpoint", async () => {
+    await create(blockedSite);
+    await create(blockedSite);
+    await request(app).post("/endpoints/1/check");
+    const res = await request(app).get("/endpoints/2/checks");
+    expect(res.body).toEqual([]);
+  });
+
+  it("respects ?limit=", async () => {
+    await create(blockedSite);
+    for (let i = 0; i < 3; i++) await request(app).post("/endpoints/1/check");
+    const res = await request(app).get("/endpoints/1/checks?limit=2");
+    expect(res.body).toHaveLength(2);
+  });
+
+  it.each(["0", "501", "abc"])("rejects ?limit=%s with 400", async (limit) => {
+    await create(blockedSite);
+    expect((await request(app).get(`/endpoints/1/checks?limit=${limit}`)).status).toBe(400);
+  });
+
+  it("returns 404 for an endpoint that does not exist", async () => {
+    expect((await request(app).get("/endpoints/999/checks")).status).toBe(404);
+  });
+
+  it("deletes an endpoint's history when the endpoint is deleted", async () => {
+    await create(blockedSite);
+    await request(app).post("/endpoints/1/check");
+    await request(app).delete("/endpoints/1");
+    const rows = await db.query("SELECT * FROM check_results");
+    expect(rows).toEqual([]);
   });
 });
 

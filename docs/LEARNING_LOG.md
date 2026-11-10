@@ -183,6 +183,106 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 4 — 2026-11-11 — M4 step 1: saving check history
+
+**What we built**
+- Table `check_results` (one row per check), "check now" saves its result, `GET /endpoints/:id/checks` shows history newest first.
+
+**Concepts (simple words)**
+- Foreign key: `endpoint_id` must point at a real endpoint. `ON DELETE CASCADE` means deleting an endpoint deletes its history too.
+- Index: like a book's index, it finds "endpoint 5's newest results" without reading every row.
+- Query parameters (`?limit=2`) arrive as text, so we convert and range-check them.
+- TRUNCATE of a table that another table points at needs both tables listed together.
+
+**Verification**
+- Dev DB migrated (`002_create_check_results.sql`). typecheck OK, lint OK, build OK, 82/82 tests. Real run: two example.com checks saved (301 ms, 248 ms) and listed newest first.
+
+**Next step**
+- Decide how to run checks automatically: Postgres polling worker vs Redis + BullMQ.
+
+---
+
+### Session 5 — 2026-11-11 — M4 step 2: automatic checks with Redis + BullMQ
+
+**Decision**
+- The developer chose Redis + BullMQ over a simple Postgres-polling worker (ADR-007).
+
+**What we built**
+- Redis in Docker. `scheduler.ts`: one repeating timer per active endpoint. The API updates timers on add/edit/pause/delete. `worker.ts`: a separate program that runs the checks (max 10 at once), with retries, and saves results.
+
+**Concepts (simple words)**
+- Queue: a to-do list of jobs. Worker: the program that does the jobs.
+- Timer (job scheduler): "put a job for endpoint 5 on the list every 60 s".
+- Why a separate worker: slow checks never slow down the API.
+- Fixed timer id (`endpoint-5`): scheduling twice updates the timer, it doesn't duplicate it.
+- The job carries only the id: the worker always reads the latest settings from the database.
+- Postgres = truth, Redis = helper: Redis can be rebuilt from the database (`syncAll`).
+- Retry (website flaky) vs job failure (our code broke): handled differently.
+- Fake vs real in tests: the API tests use a fake scheduler; the scheduler tests use real Redis with a separate prefix.
+
+**Verification**
+- typecheck OK, lint OK, build OK, 97/97 tests.
+- Real run: endpoint with a 30 s interval was checked automatically at +0 s, +30 s, +60 s (example.com, about 235 ms). Pausing removed its timer from Redis. Worker shut down cleanly (exit 0). The worker also found and scheduled a pre-existing dev endpoint on startup.
+
+**Questions to revisit**
+- What happens to timers if Redis restarts? (They're lost until the worker restarts and runs syncAll.)
+- Why is a "website down" not a failed job?
+
+**Next step**
+- M5: incidents. Open an incident after N failures in a row, close it after recovery.
+
+---
+
+### Session 6 — 2026-11-11 — M5: incidents
+
+**What we built**
+- Table `incidents` and setting `failure_threshold` (default 3). After every check: N failures in a row open an incident (starting at the first failure), and the first success resolves it. `GET /incidents` with status/endpoint filters.
+
+**Concepts (simple words)**
+- Incident = a period of being down, with a start and an end.
+- "When did it start?" means the first failure, not the moment we noticed.
+- Partial unique index: "only one *open* incident per endpoint", enforced by the database itself, so even two workers can't create duplicates.
+- `ON CONFLICT DO NOTHING`: if the rule is broken, insert nothing instead of erroring.
+- JOIN: add the endpoint's name to each incident row.
+- `TRUNCATE ... CASCADE` empties every table linked to endpoints (test helper `resetDb`).
+- Fake outage for testing: expect status 500 from a site that returns 200.
+
+**Verification**
+- Dev DB migrated (003). typecheck OK, lint OK, build OK, 113/113 tests.
+- Real run: incident opened after 2 failures (started_at = first failure), resolved 60 s later at the first good check.
+- Observed: the developer's own `dev:worker` and the test worker shared jobs, and each check ran exactly once (queue = horizontal scaling).
+
+**Known limits**
+- Flapping sites create many short incidents. A paused endpoint keeps its open incident.
+
+**Next step**
+- M6: email alerts when an incident opens or resolves.
+
+---
+
+### Session 7 — 2026-11-11 — M6: email alerts
+
+**What we built**
+- Mailpit (fake inbox) in Docker. An email on incident opened (🔴 DOWN) and resolved (✅ RECOVERED, with downtime). Sent through a second BullMQ queue ("alerts") with retries.
+
+**Concepts (simple words)**
+- SMTP: the standard way programs hand emails to an email server. nodemailer speaks it for us.
+- Fake inbox for development: real emails, nobody receives them.
+- Retry with exponential backoff: wait 5 s, then 10 s, 20 s, 40 s, so we don't hammer a broken server.
+- Fixed job id = no duplicate emails (idempotency).
+- Pure function for the email text, so it's easy to test.
+- Emails state facts (what failed, when) and say they don't know why.
+- One decision-maker: only the worker opens/closes incidents and triggers alerts.
+
+**Verification**
+- typecheck OK, lint OK, build OK, 129/129 tests.
+- Real run: DOWN email after 2 failures, RECOVERED email ("down 1m 0s") after the fix. With Mailpit stopped, the first send failed. After restarting Mailpit the retry succeeded and the email arrived.
+
+**Next step**
+- M7: minimal dashboard (React) to see endpoints, checks, and incidents.
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

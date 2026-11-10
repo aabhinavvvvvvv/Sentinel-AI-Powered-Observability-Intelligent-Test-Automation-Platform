@@ -9,8 +9,10 @@
   },
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../.env src/server.ts | pino-pretty",
+    "dev:worker": "tsx watch --env-file-if-exists=../.env src/worker.ts | pino-pretty",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=../.env dist/server.js",
+    "start:worker": "node --env-file-if-exists=../.env dist/worker.js",
     "migrate": "tsx --env-file-if-exists=../.env src/migrate-cli.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -18,7 +20,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "bullmq": "^6.7.3",
     "express": "^5.3.0",
+    "nodemailer": "^10.5.0",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",
@@ -29,6 +33,7 @@
     "@eslint/js": "^10.0.1",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
     "eslint": "^10.14.0",

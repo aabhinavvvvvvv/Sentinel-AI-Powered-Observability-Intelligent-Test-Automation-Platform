@@ -11,8 +11,27 @@ describe("loadConfig", () => {
       PORT: 3000,
       LOG_LEVEL: "info",
       DATABASE_URL: VALID_URL,
+      REDIS_URL: "redis://localhost:6379",
+      SMTP_URL: "smtp://localhost:1025",
+      ALERT_EMAIL_FROM: "Sentinel <sentinel@localhost>",
+      ALERT_EMAIL_TO: [], // alerts off by default
       HEALTHCHECK_DB_TIMEOUT_MS: 2000,
     });
+  });
+
+  it("splits ALERT_EMAIL_TO into a list of addresses", () => {
+    const config = loadConfig({ DATABASE_URL: VALID_URL, ALERT_EMAIL_TO: " a@example.com, b@example.com ," });
+    expect(config.ALERT_EMAIL_TO).toEqual(["a@example.com", "b@example.com"]);
+  });
+
+  it("rejects an invalid address in ALERT_EMAIL_TO", () => {
+    expect(() => loadConfig({ DATABASE_URL: VALID_URL, ALERT_EMAIL_TO: "a@example.com, nope" })).toThrow(
+      /ALERT_EMAIL_TO/,
+    );
+  });
+
+  it("rejects a non-Redis REDIS_URL", () => {
+    expect(() => loadConfig({ DATABASE_URL: VALID_URL, REDIS_URL: "http://x" })).toThrow(/REDIS_URL/);
   });
 
   it("converts numeric strings to numbers", () => {

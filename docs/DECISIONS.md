@@ -100,3 +100,55 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 **Trade-offs.** Sites that redirect (e.g. http → https) are reported with their 3xx status, so users must register the final URL or set `expected_status` to the 3xx. Private/local services can't be monitored.
 
 **Revisit if.** We need to follow redirects (then re-check each hop) or allow an explicit allowlist of private targets.
+
+---
+
+## ADR-007 — Scheduling with Redis + BullMQ job schedulers
+
+**Date:** 2026-11-11 · **Status:** Accepted (developer's choice)
+
+**Context.** Endpoints must be checked automatically every `interval_seconds`.
+
+**Options.** (A) A worker that polls Postgres every few seconds for due endpoints: no new infrastructure. (B) Redis + BullMQ: one repeating job scheduler per endpoint.
+
+**Decision.** (B). The API upserts/removes the endpoint's scheduler on create/update/delete. A separate worker process consumes jobs (concurrency 10) and resyncs all schedulers from Postgres on startup.
+
+**Why.** It's the planned stack, it's widely used, and it's good learning: queues, workers, concurrency limits, and the idea of de-duplicating by a fixed scheduler id. It also fires jobs at exact intervals without polling.
+
+**Trade-offs.** One more service (Redis), and Redis state must be kept consistent with Postgres: API calls plus startup `syncAll`. Option A would have needed neither. If Redis is down, edits to endpoints fail with 500 until it's back, and the worker restart repairs timers.
+
+**Revisit if.** Running Redis becomes a burden, or consistency issues appear. Option A or a periodic `syncAll` would address them.
+
+---
+
+## ADR-008 — Incident rule: N consecutive failures open, one success closes
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** A single failed check is often noise. We need a clear definition of "down".
+
+**Decision.** Open an incident when the newest `failure_threshold` checks (per endpoint, default 3) all failed; it starts at the first failure of that streak. Resolve on the first successful check. At most one open incident per endpoint, enforced by a partial unique index.
+
+**Why.** It's easy to explain, easy to test, and configurable per endpoint. The database constraint makes duplicates impossible, without needing locks in our code.
+
+**Trade-offs.** Detection delay is about `failure_threshold × interval`. One success closes the incident, so flapping sites produce several short incidents. Time-based rules ("down for 5 minutes") and "N successes to recover" are not supported.
+
+**Revisit if.** Flapping creates noisy incidents/alerts in practice. Then add a recovery threshold.
+
+---
+
+## ADR-009 — Email alerts via an alerts queue, SMTP (nodemailer), and Mailpit locally
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** Engineers must be told when an incident opens or resolves. Email delivery can fail temporarily.
+
+**Options.** (a) Send the email directly inside the check job. (b) Put an "alert" job on a second BullMQ queue with retries. (c) A third-party alerting service.
+
+**Decision.** (b). SMTP through nodemailer, configured by `SMTP_URL`. Mailpit in Docker for development. One global recipient list (`ALERT_EMAIL_TO`). Only the worker decides incidents, so there's one place that triggers alerts.
+
+**Why.** Retries with exponential backoff come for free, and a fixed job id prevents duplicate emails. SMTP works with any provider, and no credentials are in code. Mailpit lets us see real emails without sending any.
+
+**Trade-offs.** More moving parts than a direct send. Alerts can arrive a few seconds late. After 5 failed attempts the alert is dropped (kept in the failed list, logged). A global recipient list, no per-user settings yet. "Check now" no longer opens/closes incidents immediately.
+
+**Revisit if.** We add users (per-user recipients) or other channels (Slack, webhooks).

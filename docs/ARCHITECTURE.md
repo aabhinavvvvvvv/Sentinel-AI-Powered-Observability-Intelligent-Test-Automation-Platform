@@ -142,7 +142,23 @@ flowchart LR
 - Timeout: `AbortSignal.timeout(timeout_ms)` cancels the request.
 - Response time = time until response headers arrive. The body is discarded.
 - Redirects are **not followed** (`redirect: "manual"`). A 3xx is reported as the status.
-- Results are returned only, not stored. Storage and scheduling come in M4.
+- Since M4 step 1, "check now" saves each result to `check_results` (see below). Automatic scheduling is the next step.
+
+### Schema: `check_results` (M4 step 1)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER identity PK | |
+| endpoint_id | INTEGER FK → endpoints(id) | `ON DELETE CASCADE`: deleting an endpoint deletes its history |
+| ok | BOOLEAN | |
+| status_code | INTEGER NULL | NULL when there was no answer |
+| response_time_ms | INTEGER | |
+| error_type / error_message | TEXT NULL | NULL when ok |
+| checked_at | TIMESTAMPTZ | UTC |
+
+Index `(endpoint_id, checked_at DESC)` makes "newest results for endpoint X" fast. API: `GET /endpoints/:id/checks?limit=N` (1–500, default 50).
+
+Growth: one endpoint every 60 s produces about 1,440 rows/day (about 525k/year). A retention or cleanup job will be needed eventually; not yet.
 
 ### SSRF guard
 
@@ -154,6 +170,79 @@ Blocked ranges: 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.168/16, 
 
 Known limits: the fetch standard refuses some ports outright ("bad port", reported as `network`). Private targets can't be monitored, which is by design. Tests pass `allowPrivateAddresses: true` so they can use a local fake server.
 
-## 5. Local infrastructure
+## 5. Automatic checks: Redis + BullMQ (Milestone 4)
 
-`docker-compose.yml` runs `postgres:16-alpine`, published on `127.0.0.1:5432` only (not reachable from the network), with data in the named volume `pgdata` and a `pg_isready` healthcheck. Redis is added in M4 when job scheduling needs it.
+```mermaid
+flowchart LR
+    API[API process<br/>server.ts] -->|add/edit → upsert timer<br/>pause/delete → remove timer| R[(Redis<br/>BullMQ job schedulers)]
+    R -->|every N s: job endpointId| W[Worker process<br/>worker.ts, concurrency 10]
+    W -->|read latest config| DB[(PostgreSQL)]
+    W -->|checkEndpoint + retries| T[target website]
+    W -->|INSERT check_results| DB
+    W -.->|on startup: syncAll from DB| R
+```
+
+- **One timer per endpoint**, with the fixed id `endpoint-<id>`. `upsertJobScheduler` updates it instead of creating duplicates.
+- **Jobs carry only `endpointId`.** The worker reads the current URL, timeout and paused flag from Postgres for every job, so edits apply on the next tick.
+- **Retries** (`max_retries`) happen inside one job, 1 s apart. Only the final result is saved.
+- **A failed job** means our code broke (e.g. the DB is down), not that a site is down. It is logged and not retried: the next tick checks again.
+- **Postgres is the source of truth.** Redis has no volume. `syncAll` on worker startup creates timers for active endpoints and removes timers for deleted/paused ones.
+- Finished jobs are removed from Redis (`removeOnComplete`). Results live in Postgres.
+- Redis keys use the prefix `sentinel`. Tests use `sentinel-test`.
+
+Known limitation: if Redis is down when an endpoint is created or edited, the DB change succeeds but the request returns 500 and the timer isn't updated. Restarting the worker repairs it (`syncAll`).
+
+## 6. Incidents (Milestone 5)
+
+After every **scheduled** check, the worker runs `incidents/update-incidents.ts` (since M6, only the worker decides incidents; "check now" results are saved and counted at the next scheduled check). It applies one rule:
+
+| Check | Open incident? | Action |
+|---|---|---|
+| ok | yes | resolve it (`resolved_at` = this check's time) |
+| ok | no | nothing |
+| failed | yes | nothing (still down) |
+| failed | no | if the newest `failure_threshold` checks all failed → open one |
+
+- `started_at` = time of the **first** failure in the streak (answers "when did it start?"). `error_type`/`error_message` come from that first failure.
+- A partial unique index (`endpoint_id WHERE resolved_at IS NULL`) guarantees at most one open incident per endpoint, even if two workers race. Inserts use `ON CONFLICT ... DO NOTHING`.
+- The rule returns `opened` / `resolved` / null. The worker logs it; M6 will send email on it.
+- API: `GET /incidents?status=&endpoint_id=&limit=`, joined with the endpoint name.
+
+### Schema: `incidents`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | INTEGER identity PK | |
+| endpoint_id | INTEGER FK → endpoints | `ON DELETE CASCADE` |
+| started_at | TIMESTAMPTZ | first failed check of the streak |
+| resolved_at | TIMESTAMPTZ NULL | NULL = open |
+| error_type / error_message | TEXT | from the first failed check |
+
+`endpoints.failure_threshold` (1–10, default 3) was added in the same migration.
+
+Known limitations: one success resolves an incident, so a "flapping" site (up/down/up) can open and close many incidents. Pausing an endpoint leaves an open incident open.
+
+## 7. Email alerts (Milestone 6)
+
+```mermaid
+flowchart LR
+    CW[check worker] -->|incident opened/resolved| AQ[(Redis: alerts queue<br/>jobId incident-7-opened)]
+    AQ --> AW[alert worker<br/>concurrency 2]
+    AW -->|load incident + endpoint| DB[(PostgreSQL)]
+    AW -->|nodemailer SMTP| M[Mailpit locally<br/>real SMTP in production]
+    AW -.->|send failed → retry 5s,10s,20s,40s| AQ
+```
+
+- Both workers run in the same `worker.ts` process.
+- **Retries:** `attempts: 5`, exponential backoff from 5 s. A failed send throws, and BullMQ schedules the retry.
+- **No duplicates:** the job id `incident-<id>-<kind>` is fixed, and finished jobs are kept for 24 h, so the same alert can't be queued twice.
+- **Content:** `alerts/incident-email.ts` (pure function). Times are shown in UTC. The email states measured facts and explicitly says it doesn't know the cause.
+- **Recipients:** global list `ALERT_EMAIL_TO`; empty = alerts off. Per-user preferences need authentication (later).
+- The job carries only `incidentId` + `kind`. The worker reads current data from Postgres. If the incident was deleted, the alert is skipped.
+
+## 8. Local infrastructure
+
+`docker-compose.yml` runs, all on `127.0.0.1` only:
+- `postgres:16-alpine`: named volume `pgdata`, `pg_isready` healthcheck.
+- `redis:7-alpine`: no volume (rebuilt from Postgres), `redis-cli ping` healthcheck.
+- `axllent/mailpit:v1.33.1`: fake SMTP server on 1025, web inbox on http://localhost:8025.

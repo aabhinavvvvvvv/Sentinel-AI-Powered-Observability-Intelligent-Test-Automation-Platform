@@ -6,6 +6,7 @@ import { createApp } from "./app.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { createDatabase } from "./db.js";
 import { createLogger } from "./logger.js";
+import { createScheduler } from "./scheduler.js";
 
 const SHUTDOWN_GRACE_MS = 10_000;
 
@@ -13,7 +14,13 @@ function main(): void {
   const config = loadConfig();
   const logger = createLogger(config.LOG_LEVEL);
   const db = createDatabase(config.DATABASE_URL, logger);
-  const app = createApp({ db, logger, healthcheckDbTimeoutMs: config.HEALTHCHECK_DB_TIMEOUT_MS });
+  const scheduler = createScheduler(config.REDIS_URL);
+  const app = createApp({
+    db,
+    scheduler,
+    logger,
+    healthcheckDbTimeoutMs: config.HEALTHCHECK_DB_TIMEOUT_MS,
+  });
 
   // In Express 5 this callback also runs when starting FAILS (e.g. the port is
   // already used by another program), with the error as its argument.
@@ -42,13 +49,13 @@ function main(): void {
     }, SHUTDOWN_GRACE_MS).unref();
 
     server.close(() => {
-      db.close()
+      Promise.all([scheduler.close(), db.close()])
         .then(() => {
           logger.info("shutdown complete");
           process.exit(0);
         })
         .catch((err: unknown) => {
-          logger.error({ err }, "error while closing database pool");
+          logger.error({ err }, "error while closing connections");
           process.exit(1);
         });
     });

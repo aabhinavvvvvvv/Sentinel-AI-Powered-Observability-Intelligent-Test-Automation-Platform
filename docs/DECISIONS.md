@@ -82,3 +82,21 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 **Trade-offs.** No automatic type generation from the schema: the `Endpoint` TypeScript type is kept in sync by hand. No "down" migrations (fix forward with a new file). Dynamic `UPDATE` builds column names from validated keys, which is safe only because the Zod schema whitelists them.
 
 **Revisit if.** Many tables with complex joins make hand-written types error-prone, or we need rollback migrations.
+
+---
+
+## ADR-006 — SSRF protection with a connection-time DNS check
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** Users register arbitrary URLs and Sentinel visits them from inside our network.
+
+**Options.** (a) Check the URL only when it's registered. (b) Look up the IP just before the request, then fetch. (c) Check the IP inside the HTTP client's own DNS lookup, at connection time.
+
+**Decision.** (c), using `undici` (Node's official HTTP client) with a custom `lookup`, plus a direct check for IPs typed into the URL. Redirects are not followed.
+
+**Why.** (a) fails because DNS answers can change after registration. (b) has a gap: DNS could answer differently on the second lookup (DNS rebinding). (c) checks the exact IP we connect to. Not following redirects stops "public URL → redirect to internal address" tricks without extra code.
+
+**Trade-offs.** Sites that redirect (e.g. http → https) are reported with their 3xx status, so users must register the final URL or set `expected_status` to the 3xx. Private/local services can't be monitored.
+
+**Revisit if.** We need to follow redirects (then re-check each hop) or allow an explicit allowlist of private targets.

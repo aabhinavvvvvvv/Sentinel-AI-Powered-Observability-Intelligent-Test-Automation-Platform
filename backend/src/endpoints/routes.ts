@@ -5,9 +5,11 @@
  *   GET    /endpoints/:id   get one           → 200 | 400 | 404
  *   PATCH  /endpoints/:id   update some fields → 200 | 400 | 404  (also used to pause/resume)
  *   DELETE /endpoints/:id   delete            → 204 | 400 | 404
+ *   POST   /endpoints/:id/check  check it now → 200 | 400 | 404
  */
 import { Router, type Response } from "express";
 import type { ZodError } from "zod";
+import { checkEndpoint } from "../checks/check-endpoint.js";
 import type { Database } from "../db.js";
 import * as repo from "./repository.js";
 import { CreateEndpointSchema, UpdateEndpointSchema } from "./schemas.js";
@@ -41,6 +43,16 @@ export function endpointsRouter(db: Database): Router {
     const endpoint = await repo.updateEndpoint(db, id, parsed.data);
     if (!endpoint) return sendNotFound(res, id);
     res.json(endpoint);
+  });
+
+  // "Check now": visit the endpoint once and return the result (not saved yet; that's M4).
+  // We reply 200 even if the website is down: OUR request worked, and the result says "down".
+  router.post("/:id/check", async (req, res) => {
+    const id = parseId(req.params.id);
+    if (id === null) return sendInvalidId(res);
+    const endpoint = await repo.getEndpoint(db, id);
+    if (!endpoint) return sendNotFound(res, id);
+    res.json(await checkEndpoint(endpoint));
   });
 
   router.delete("/:id", async (req, res) => {

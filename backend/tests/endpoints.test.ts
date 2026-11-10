@@ -136,6 +136,19 @@ describe("PATCH /endpoints/:id", () => {
   });
 });
 
+describe("POST /endpoints/:id/check", () => {
+  it("checks the endpoint and returns the result (blocked here: it's localhost)", async () => {
+    await create({ ...valid, url: "http://localhost:5432/" });
+    const res = await request(app).post("/endpoints/1/check");
+    expect(res.status).toBe(200); // our API worked, even though the check failed
+    expect(res.body).toMatchObject({ ok: false, error_type: "blocked" });
+  });
+
+  it("returns 404 for an id that does not exist", async () => {
+    expect((await request(app).post("/endpoints/999/check")).status).toBe(404);
+  });
+});
+
 describe("DELETE /endpoints/:id", () => {
   it("deletes an endpoint, after which it is gone", async () => {
     await create(valid);

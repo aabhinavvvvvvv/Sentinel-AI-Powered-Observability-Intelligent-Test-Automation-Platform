@@ -15,7 +15,13 @@ function main(): void {
   const db = createDatabase(config.DATABASE_URL, logger);
   const app = createApp({ db, logger, healthcheckDbTimeoutMs: config.HEALTHCHECK_DB_TIMEOUT_MS });
 
-  const server = app.listen(config.PORT, () => {
+  // In Express 5 this callback also runs when starting FAILS (e.g. the port is
+  // already used by another program), with the error as its argument.
+  const server = app.listen(config.PORT, (err) => {
+    if (err) {
+      logger.fatal({ err }, `could not start: ${err.message}`);
+      process.exit(1);
+    }
     logger.info({ port: config.PORT, env: config.NODE_ENV }, "sentinel backend listening");
   });
 

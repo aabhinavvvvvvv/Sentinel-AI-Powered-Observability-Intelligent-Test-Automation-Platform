@@ -179,7 +179,7 @@ These are proposed choices. Review the existing repository and explain any chang
 ### Phase 0 — Repository and design discovery
 > **Status (2026-11-11): done.** Inspection found no existing code (docs only), so there was no prior API monitor to preserve. Stack confirmed as proposed, with a TypeScript backend and Docker Compose for local dependencies (see `docs/DECISIONS.md` ADR-001–004). Runnable baseline = Milestone 1 walking skeleton (`GET /healthz`).
 >
-> **Phase 1 milestone breakdown:** M1 walking skeleton ✅ → M2 endpoint registry (migrations + CRUD) ✅ → M3 single-check executor with SSRF guard → M4 persisted results + BullMQ scheduling/worker → M5 incident lifecycle → M6 email alerts → M7 minimal dashboard.
+> **Phase 1 milestone breakdown:** M1 walking skeleton ✅ → M2 endpoint registry (migrations + CRUD) ✅ → M3 single-check executor with SSRF guard ✅ → M4 persisted results + BullMQ scheduling/worker → M5 incident lifecycle → M6 email alerts → M7 minimal dashboard.
 
 - Inspect current repo and existing API monitor.
 - Record what works and what needs improvement.

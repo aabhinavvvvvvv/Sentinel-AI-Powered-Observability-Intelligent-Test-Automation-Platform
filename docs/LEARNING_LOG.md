@@ -145,6 +145,44 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 3 — 2026-11-11 — Milestone 3: checking a website (+ simple-words preference)
+
+**What we are building**
+- A "check now" button: Sentinel visits one website and reports up/down, status code, speed, and the reason for any failure.
+
+**Concepts taught (in simple words)**
+- A check = visit the URL, time it, compare the answer to the expected status.
+- Timeout = stop waiting after N milliseconds.
+- Error types: timeout, dns (name doesn't exist), connection_refused (nobody listening), tls (certificate problem), unexpected_status, blocked.
+- SSRF: the "delivery person inside the office" analogy. Never let users send Sentinel to inside addresses.
+- Why check at connection time (DNS can change its answer).
+- Why the API returns 200 even when the website is down (our request worked; the result says "down").
+
+**Simple explanation / analogy**
+- Sentinel is a delivery person who goes to any address you give. Inside addresses (the server room) are off-limits, even though the delivery person could get in.
+
+**Files and code changed**
+- New: `src/checks/ssrf-guard.ts`, `src/checks/check-endpoint.ts`, `tests/ssrf-guard.test.ts`, `tests/check-endpoint.test.ts`.
+- Changed: `src/endpoints/routes.ts` (check route), `src/server.ts` (startup error fix), `tests/endpoints.test.ts`, docs. Added dependency `undici`.
+
+**Commands and verification**
+- typecheck OK, lint OK, build OK, 74/74 tests passed.
+- Real run: example.com → ok 200; api.github.com → 403 (unexpected_status); fake .invalid site → dns; localhost:5432 → blocked; 169.254.169.254 → blocked.
+
+**Bugs found and fixed (good debugging lessons)**
+1. Blocklist rule `::ffff:0:0/96` blocked *every* IPv4 address, because Node's BlockList treats IPv4 as IPv4-mapped IPv6. Caught by the "allows 8.8.8.8" test. Fix: removed the rule; the IPv4 rules already cover mapped addresses.
+2. A test used port 1 for "nothing listening", but fetch refuses that port ("bad port"). The test was wrong, not the code.
+3. M1 bug: in Express 5, the `app.listen` callback also runs on failure (e.g. port busy). We logged "listening" and exited silently. Fix: check the `err` argument, log fatal, exit 1. Found because the developer's own `npm run dev` was holding port 3000.
+
+**Questions to revisit**
+- Why does checking only at registration time not stop SSRF?
+- Why don't we follow redirects?
+
+**Next step**
+- M4: save every check result and run checks automatically on a schedule (BullMQ + worker).
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

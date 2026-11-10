@@ -124,6 +124,36 @@ Not yet: ownership (`user_id`), which comes with authentication. The URL is only
 - `health`, `config`, `errors`, `db` tests use fakes and need no database.
 - `endpoints` and `migrate` tests are **integration tests** against a real `sentinel_test` database. `tests/global-setup.ts` creates and migrates it once, and each test truncates the table first. Test files run one at a time because they share that database.
 
-## 4. Local infrastructure
+## 4. Checking an endpoint (Milestone 3)
+
+```mermaid
+flowchart LR
+    C[client] -->|POST /endpoints/:id/check| R[routes.ts]
+    R -->|load row| DB[(endpoints)]
+    R --> CE[checks/check-endpoint.ts]
+    CE -->|1. IP typed in URL? check it| G[checks/ssrf-guard.ts]
+    CE -->|2. fetch via safe Agent| U[undici]
+    U -->|DNS lookup → safeLookup checks every IP| G
+    U -->|connect only if allowed| T[target website]
+    CE -->|CheckResult JSON| C
+```
+
+- `checkEndpoint()` **never throws**. Every outcome (up, wrong status, timeout, DNS failure, blocked) is returned as a `CheckResult`.
+- Timeout: `AbortSignal.timeout(timeout_ms)` cancels the request.
+- Response time = time until response headers arrive. The body is discarded.
+- Redirects are **not followed** (`redirect: "manual"`). A 3xx is reported as the status.
+- Results are returned only, not stored. Storage and scheduling come in M4.
+
+### SSRF guard
+
+Two checks, because there are two ways to reach an address:
+1. **IP typed in the URL** (`http://127.0.0.1`): no DNS lookup happens, so `checkEndpoint` checks the IP itself.
+2. **Hostname** (`http://localhost`): undici's Agent uses `safeLookup`, which does the normal DNS lookup and refuses if *any* returned IP is blocked. The check happens at connection time, so DNS changing its answer between check and connect (DNS rebinding) doesn't help an attacker.
+
+Blocked ranges: 0/8, 10/8, 100.64/10, 127/8, 169.254/16, 172.16/12, 192.168/16, 224/4, 240/4, ::, ::1, fc00::/7, fe80::/10, ff00::/8. IPv4-mapped IPv6 (`::ffff:127.0.0.1`) is matched by the IPv4 rules automatically.
+
+Known limits: the fetch standard refuses some ports outright ("bad port", reported as `network`). Private targets can't be monitored, which is by design. Tests pass `allowPrivateAddresses: true` so they can use a local fake server.
+
+## 5. Local infrastructure
 
 `docker-compose.yml` runs `postgres:16-alpine`, published on `127.0.0.1:5432` only (not reachable from the network), with data in the named volume `pgdata` and a `pg_isready` healthcheck. Redis is added in M4 when job scheduling needs it.

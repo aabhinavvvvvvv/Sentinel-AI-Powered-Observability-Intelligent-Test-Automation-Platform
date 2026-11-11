@@ -89,6 +89,7 @@ If PostgreSQL is stopped (`docker compose stop postgres`), the same request retu
 | `npm run dev` | Run the API from TypeScript source with auto-reload and pretty logs |
 | `npm run dev:worker` | Run the check worker the same way |
 | `npm run migrate` | Apply pending SQL files from `backend/migrations/` |
+| `npm run replay` | Test-order experiment: replays past runs (real suites + labelled SYNTHETIC history) and compares the normal vs suggested order (APFD). See `docs/EXPERIMENTS.md`, Experiment 4 |
 | `npm test` | Run all tests once. **Needs Postgres and Redis running** (not Mailpit: tests use a fake mailer); uses a separate `sentinel_test` database and `sentinel-test` Redis prefix |
 | `npm run typecheck` | Type-check `src/` and `tests/` without emitting files |
 | `npm run lint` | Run ESLint |
@@ -160,9 +161,10 @@ All configuration comes from environment variables, validated at startup by `bac
 | GET / PATCH / DELETE | `/suites/:id` | one suite + its `cases` / change `{name?, schedule_minutes?}` / delete (204) | `400`, `404` |
 | POST | `/suites/:id/cases` | add a test case (201) | `400`, `404` |
 | PATCH / DELETE | `/suites/:id/cases/:caseId` | change some fields (full case re-validated) / delete (204) | `400`, `404` |
-| POST | `/suites/:id/runs` | `202` run queued; the worker runs the cases one at a time | `400` (no cases), `404` |
+| POST | `/suites/:id/runs` | `202` run queued; the worker runs the cases one at a time. Optional body `{"order": "priority"}` runs the riskiest cases first (default `"default"`, the normal order). Every case runs either way; scheduled runs use the normal order | `400` (no cases, bad `order`), `404` |
 | GET | `/suites/:id/runs?limit=50` | run history, newest first (`queued` → `running` → `passed`/`failed`/`error`) | `400`, `404` |
 | GET | `/suites/:id/runs/:runId` | one run + `results` per case (`passed`, status, time, `failures` with reasons) | `400`, `404` |
+| GET | `/suites/:id/priority` | cases ranked by risk (highest first), each with `score`, `reasons`, `warning`; plus `endpoint` trouble right now. Points, not probabilities | `400`, `404` |
 | GET | `/incidents?status=open\|resolved&endpoint_id=N&limit=100` | `200` incidents, newest first (all filters optional) | `400` |
 
 Example:

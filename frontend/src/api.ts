@@ -133,6 +133,7 @@ export interface TestRun {
   id: number;
   suite_id: number;
   triggered_by: "manual" | "scheduled";
+  run_order: "default" | "priority"; // priority = highest priority score first; every case runs either way
   status: RunStatus;
   total: number;
   passed: number;
@@ -153,6 +154,13 @@ export interface TestCaseResult {
   error_type: string | null;
   error_message: string | null;
   failures: { assertion: { type: string }; message: string }[];
+}
+
+/** GET /suites/:id/priority: cases ranked by risk, highest score first. Points, not probabilities. */
+export interface SuitePriority {
+  suite_id: number;
+  endpoint: { open_incident: boolean; failed_checks_last_hour: number };
+  cases: { case_id: number; name: string; position: number; score: number; reasons: string[]; warning: string | null }[];
 }
 
 export interface NewEndpoint {
@@ -220,8 +228,10 @@ export const api = {
     request<TestCase>(`/suites/${suiteId}/cases`, { method: "POST", body: json }),
   deleteCase: (suiteId: number, caseId: number) =>
     request<void>(`/suites/${suiteId}/cases/${caseId}`, { method: "DELETE" }),
-  runSuite: (suiteId: number) => request<TestRun>(`/suites/${suiteId}/runs`, { method: "POST" }),
+  runSuite: (suiteId: number, order: TestRun["run_order"] = "default") =>
+    request<TestRun>(`/suites/${suiteId}/runs`, { method: "POST", body: JSON.stringify({ order }) }),
   listRuns: (suiteId: number) => request<TestRun[]>(`/suites/${suiteId}/runs?limit=20`),
   getRun: (suiteId: number, runId: number) =>
     request<TestRun & { results: TestCaseResult[] }>(`/suites/${suiteId}/runs/${runId}`),
+  getPriority: (suiteId: number) => request<SuitePriority>(`/suites/${suiteId}/priority`),
 };

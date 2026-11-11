@@ -3,11 +3,13 @@ import type { Database } from "../db.js";
 import type { AssertionFailure } from "./assertions.js";
 
 export type RunStatus = "queued" | "running" | "passed" | "failed" | "error";
+export type RunOrder = "default" | "priority";
 
 export interface TestRun {
   id: number;
   suite_id: number;
   triggered_by: "manual" | "scheduled";
+  run_order: RunOrder;
   status: RunStatus;
   total: number;
   passed: number;
@@ -27,10 +29,15 @@ export interface CaseResult {
   failures: AssertionFailure[];
 }
 
-export async function createRun(db: Database, suiteId: number, triggeredBy: TestRun["triggered_by"]): Promise<TestRun> {
+export async function createRun(
+  db: Database,
+  suiteId: number,
+  triggeredBy: TestRun["triggered_by"],
+  order: RunOrder = "default",
+): Promise<TestRun> {
   const rows = await db.query<TestRun>(
-    "INSERT INTO test_runs (suite_id, triggered_by, status) VALUES ($1, $2, 'queued') RETURNING *",
-    [suiteId, triggeredBy],
+    "INSERT INTO test_runs (suite_id, triggered_by, status, run_order) VALUES ($1, $2, 'queued', $3) RETURNING *",
+    [suiteId, triggeredBy, order],
   );
   return rows[0]!;
 }

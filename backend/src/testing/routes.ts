@@ -8,15 +8,17 @@
  *   POST   /suites/:id/cases               add a test case                        → 201 | 400 | 404
  *   PATCH  /suites/:id/cases/:caseId       change some fields of a case           → 200 | 400 | 404
  *   DELETE /suites/:id/cases/:caseId       delete a case                          → 204 | 400 | 404
- *   POST   /suites/:id/runs                run the suite now (in the worker)      → 202 | 400 | 404
+ *   POST   /suites/:id/runs                run now {order?: default|priority}     → 202 | 400 | 404
  *   GET    /suites/:id/runs?limit=50       run history, newest first              → 200 | 400 | 404
  *   GET    /suites/:id/runs/:runId         one run + its per-case results         → 200 | 400 | 404
+ *   GET    /suites/:id/priority            cases ranked by risk, with reasons     → 200 | 400 | 404
  */
 import { Router } from "express";
 import { z } from "zod";
 import type { Database } from "../db.js";
 import { getEndpoint } from "../endpoints/repository.js";
 import { parseId, sendInvalidId, sendNotFound, sendValidationError } from "../http.js";
+import { rankCases } from "./priority.js";
 import * as repo from "./repository.js";
 import type { TestRunQueue } from "./run-queue.js";
 import * as runsRepo from "./runs-repository.js";
@@ -24,7 +26,10 @@ import { CreateSuiteSchema, SuiteSettingsSchema, TestCaseSchema, type TestCase }
 
 const LimitSchema = z.coerce.number().int().min(1).max(500).default(50);
 
-const ListQuerySchema = z.object({ endpoint_id: z.coerce.number().int().positive().max(2_147_483_647).optional() });
+// POST /suites/:id/runs body (optional): which order to run the cases in. Every case runs either way.
+const RunOptionsSchema = z.strictObject({ order: z.enum(["default", "priority"]).default("default") });
+
+const ListQuerySchema =z.object({ endpoint_id: z.coerce.number().int().positive().max(2_147_483_647).optional() });
 
 // A PATCH body: any object with at least one field (the full case is validated after merging).
 const ChangesSchema = z
@@ -147,11 +152,13 @@ export function suitesRouter(db: Database, testRuns: SuiteRunner): Router {
     const id = parseId(req.params.id);
     if (id === null) return sendInvalidId(res);
     if (!(await repo.getSuite(db, id))) return sendNotFound(res, "Suite", id);
+    const options = RunOptionsSchema.safeParse(req.body ?? {}); // no body = {} = default order
+    if (!options.success) return sendValidationError(res, options.error);
     if ((await repo.listCases(db, id)).length === 0) {
       res.status(400).json({ error: { code: "NO_TEST_CASES", message: "Add at least one test case before running the suite" } });
       return;
     }
-    const run = await runsRepo.createRun(db, id, "manual");
+    const run = await runsRepo.createRun(db, id, "manual", options.data.order);
     await testRuns.enqueue(run.id);
     res.status(202).json(run);
   });
@@ -172,6 +179,15 @@ export function suitesRouter(db: Database, testRuns: SuiteRunner): Router {
     const run = await runsRepo.getRun(db, id, runId);
     if (!run) return sendNotFound(res, "Run", runId);
     res.json({ ...run, results: await runsRepo.listCaseResults(db, runId) });
+  });
+
+  // Which cases should run first, and why (priority.ts).
+  router.get("/:id/priority", async (req, res) => {
+    const id = parseId(req.params.id);
+    if (id === null) return sendInvalidId(res);
+    const priority = await rankCases(db, id);
+    if (!priority) return sendNotFound(res, "Suite", id);
+    res.json(priority);
   });
 
   return router;

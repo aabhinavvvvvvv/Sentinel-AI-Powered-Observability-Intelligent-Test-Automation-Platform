@@ -248,6 +248,17 @@ describe("runs (API side)", () => {
     expect(testRuns.enqueue).toHaveBeenCalledWith(1);
   });
 
+  it("'Run now' can ask for the suggested order; the default is the normal order", async () => {
+    await setup();
+    await addCase(validCase);
+    expect((await request(app).post("/suites/1/runs")).body.run_order).toBe("default");
+    expect((await request(app).post("/suites/1/runs").send({ order: "priority" })).body.run_order).toBe("priority");
+
+    const bad = await request(app).post("/suites/1/runs").send({ order: "fastest" });
+    expect(bad.status).toBe(400);
+    expect(fieldsWithErrors(bad)).toEqual(["order"]);
+  });
+
   it("refuses to run a suite with no test cases", async () => {
     await setup();
     const res = await request(app).post("/suites/1/runs");

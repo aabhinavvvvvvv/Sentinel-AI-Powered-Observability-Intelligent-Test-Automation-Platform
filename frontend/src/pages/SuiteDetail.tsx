@@ -29,8 +29,8 @@ export function SuiteDetail() {
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
-    const [suite, runs] = await Promise.all([api.getSuite(id), api.listRuns(id)]);
-    return { suite, runs };
+    const [suite, runs, priority] = await Promise.all([api.getSuite(id), api.listRuns(id), api.getPriority(id)]);
+    return { suite, runs, priority };
   }, [id]);
   // Refresh every 3 s so a running suite's status updates quickly.
   const { data, error, refresh } = usePolling(load, 3000);
@@ -87,7 +87,8 @@ export function SuiteDetail() {
       </main>
     );
   }
-  const { suite, runs } = data;
+  const { suite, runs, priority } = data;
+  const trouble = priority.endpoint;
 
   return (
     <main>
@@ -119,6 +120,9 @@ export function SuiteDetail() {
           <button disabled={suite.cases.length === 0} onClick={() => void act(() => api.runSuite(id))}>
             Run now
           </button>
+          <button disabled={suite.cases.length === 0} onClick={() => void act(() => api.runSuite(id, "priority"))}>
+            Run in suggested order
+          </button>
           <button className="danger" onClick={() => void removeSuite()}>
             Delete suite
           </button>
@@ -128,6 +132,50 @@ export function SuiteDetail() {
           ⚠️ Tests send real requests (a DELETE test really deletes). Point them at test environments.
         </p>
       </section>
+
+      {priority.cases.length > 0 && (
+        <section>
+          <h2>Suggested order</h2>
+          <p className="muted small">
+            Tests most likely to fail first, with the reasons. Scores are points, not probabilities. Every test still
+            runs.
+          </p>
+          {(trouble.open_incident || trouble.failed_checks_last_hour > 0) && (
+            <p className="warning">
+              ⚠️ The endpoint is in trouble right now
+              {trouble.open_incident && " (open incident)"}
+              {trouble.failed_checks_last_hour > 0 && ` (${trouble.failed_checks_last_hour} failed health checks in the last hour)`}
+              : a good time to run this suite.
+            </p>
+          )}
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Test</th>
+                <th>Score</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              {priority.cases.map((c, i) => (
+                <tr key={c.case_id}>
+                  <td>
+                    {i + 1}
+                    {c.position !== i + 1 && <span className="muted small"> (normally {c.position})</span>}
+                  </td>
+                  <td>{c.name}</td>
+                  <td>{c.score}</td>
+                  <td className="small">
+                    {c.reasons.length > 0 ? c.reasons.join("; ") : <span className="muted">No recent failures</span>}
+                    {c.warning && <div className="warning">⚠️ {c.warning}</div>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       <section>
         <h2>Run history</h2>
@@ -161,7 +209,10 @@ export function SuiteDetail() {
                       ? formatDuration(new Date(r.finished_at).getTime() - new Date(r.started_at).getTime())
                       : "—"}
                   </td>
-                  <td className="muted">{r.triggered_by}</td>
+                  <td className="muted">
+                    {r.triggered_by}
+                    {r.run_order === "priority" && " · suggested order"}
+                  </td>
                 </tr>
               ))}
             </tbody>

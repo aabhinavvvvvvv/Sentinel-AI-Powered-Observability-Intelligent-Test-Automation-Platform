@@ -14,6 +14,7 @@ const run = {
   id: 7,
   suite_id: 1,
   triggered_by: "manual",
+  run_order: "default",
   status: "failed",
   total: 2,
   passed: 1,
@@ -54,6 +55,7 @@ describe("RunDetail", () => {
         200,
         {
           ...run,
+          run_order: "priority",
           results: [
             { id: 1, case_id: 1, case_name: "Get user 1", passed: true, status_code: 200, response_time_ms: 120, error_type: null, error_message: null, failures: [] },
             {
@@ -77,6 +79,7 @@ describe("RunDetail", () => {
     expect(screen.getByText("FAILED")).toBeTruthy();
     expect(screen.getByText('↳ "id" is 1, expected 2')).toBeTruthy();
     expect(screen.getByText(/test case deleted since/)).toBeTruthy();
+    expect(screen.getByText(/suggested order \(riskiest first\)/)).toBeTruthy();
   });
 });
 
@@ -94,8 +97,11 @@ describe("SuiteDetail", () => {
     assertions: [{ type: "status_equals", value: 200 }],
   };
 
+  const noPriority = { suite_id: 1, endpoint: { open_incident: false, failed_checks_last_hour: 0 }, cases: [] };
+
   it("shows the schedule, cases and run history, and 'Run now' starts a run", async () => {
     const fetchMock = fakeBackend({
+      "GET /api/suites/1/priority": [200, noPriority],
       "GET /api/suites/1/runs": [200, [run]],
       "GET /api/suites/1": [200, { ...suite, cases: [testCase] }],
       "POST /api/suites/1/runs": [202, { ...run, id: 8, status: "queued" }],
@@ -107,14 +113,44 @@ describe("SuiteDetail", () => {
     expect(screen.getByText("Get user 1")).toBeTruthy();
     expect(screen.getByText("1 of 2")).toBeTruthy(); // run history row
 
+    const runBodies = () =>
+      fetchMock.mock.calls.filter(([url, init]) => url === "/api/suites/1/runs" && init?.method === "POST").map(([, init]) => init?.body);
     fireEvent.click(screen.getByRole("button", { name: "Run now" }));
-    await vi.waitFor(() =>
-      expect(fetchMock.mock.calls.some(([url, init]) => url === "/api/suites/1/runs" && init?.method === "POST")).toBe(true),
-    );
+    await vi.waitFor(() => expect(runBodies()).toEqual(['{"order":"default"}']));
+    fireEvent.click(screen.getByRole("button", { name: "Run in suggested order" }));
+    await vi.waitFor(() => expect(runBodies()).toEqual(['{"order":"default"}', '{"order":"priority"}']));
+  });
+
+  it("shows the suggested order with reasons, warnings and endpoint trouble", async () => {
+    fakeBackend({
+      "GET /api/suites/1/priority": [
+        200,
+        {
+          suite_id: 1,
+          endpoint: { open_incident: true, failed_checks_last_hour: 2 },
+          cases: [
+            { case_id: 4, name: "Always fails", position: 2, score: 70, reasons: ["Failed in the last run (+40)"], warning: "Failed all of its last 5 runs: the test itself may be wrong, not the API." },
+            { case_id: 3, name: "Get user 1", position: 1, score: 0, reasons: [], warning: null },
+          ],
+        },
+      ],
+      "GET /api/suites/1/runs": [200, []],
+      "GET /api/suites/1": [200, { ...suite, cases: [testCase] }],
+    });
+    renderAt("/suites/1");
+
+    expect(await screen.findByRole("heading", { name: "Suggested order" })).toBeTruthy();
+    expect(screen.getByText(/points, not probabilities/)).toBeTruthy();
+    expect(screen.getByText(/endpoint is in trouble right now/).textContent).toMatch(/open incident.*2 failed health checks/);
+    expect(screen.getByText("Failed in the last run (+40)")).toBeTruthy();
+    expect(screen.getByText(/test itself may be wrong/)).toBeTruthy();
+    expect(screen.getByText("(normally 2)")).toBeTruthy(); // it moved up from 2nd to 1st
+    expect(screen.getByText("No recent failures")).toBeTruthy();
   });
 
   it("shows the backend's reasons when a pasted test case is invalid", async () => {
     fakeBackend({
+      "GET /api/suites/1/priority": [200, noPriority],
       "GET /api/suites/1/runs": [200, []],
       "GET /api/suites/1": [200, { ...suite, cases: [] }],
       "POST /api/suites/1/cases": [

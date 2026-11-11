@@ -2,6 +2,7 @@
 import { sendRequest } from "../checks/http-client.js";
 import type { Database } from "../db.js";
 import { evaluateAssertions } from "./assertions.js";
+import { rankCases } from "./priority.js";
 import { getSuite, listCases } from "./repository.js";
 import { createRun, finishRun, saveCaseResult, startRun, type CaseResult, type TestRun } from "./runs-repository.js";
 import type { NewTestCase } from "./schemas.js";
@@ -19,9 +20,11 @@ export async function runSuite(db: Database, runId: number, options: Options = {
       return await finishRun(db, runId, { status: "error", total: 0, passed: 0, failed: 0, error_message: "suite has no test cases" });
     }
 
+    const ordered = run.run_order === "priority" ? await inPriorityOrder(db, run.suite_id, cases) : cases;
+
     let passed = 0;
-    // One case at a time: gentle on the API being tested, and results stay in order.
-    for (const testCase of cases) {
+    // One case at a time: gentle on the API being tested, and results are saved in the order they ran.
+    for (const testCase of ordered) {
       const result = await runTestCase(testCase, options);
       await saveCaseResult(db, runId, testCase, result);
       if (result.passed) passed++;
@@ -38,6 +41,17 @@ export async function runSuite(db: Database, runId: number, options: Options = {
     await finishRun(db, runId, { status: "error", total: 0, passed: 0, failed: 0, error_message: String(err) });
     throw err;
   }
+}
+
+/**
+ * The same cases, highest priority score first (priority.ts). Never drops a case: one the
+ * ranking doesn't know (e.g. added a moment ago) simply goes last.
+ */
+async function inPriorityOrder<T extends { id: number }>(db: Database, suiteId: number, cases: T[]): Promise<T[]> {
+  const ranked = (await rankCases(db, suiteId))?.cases ?? [];
+  const place = new Map(ranked.map((c, i) => [c.case_id, i] as const));
+  const placeOf = (c: T) => place.get(c.id) ?? cases.length;
+  return [...cases].sort((a, b) => placeOf(a) - placeOf(b));
 }
 
 /**

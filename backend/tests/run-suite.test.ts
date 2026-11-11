@@ -96,6 +96,17 @@ describe("runSuite", () => {
     expect(await runSuite(db, run.id, local)).toMatchObject({ status: "error", error_message: "suite has no test cases" });
   });
 
+  it("a 'priority' run runs the riskiest case first, and still runs every case", async () => {
+    const first = await suiteWith([{ name: "passes" }, { name: "fails", assertions: [{ type: "status_equals", value: 201 }] }]);
+    await runSuite(db, first.id, local); // normal order
+    expect((await listCaseResults(db, first.id)).map((r) => r.case_name)).toEqual(["passes", "fails"]);
+
+    // "fails" failed last time, so it now goes first.
+    const second = await createRun(db, first.suite_id, "manual", "priority");
+    expect(await runSuite(db, second.id, local)).toMatchObject({ run_order: "priority", total: 2, passed: 1 });
+    expect((await listCaseResults(db, second.id)).map((r) => r.case_name)).toEqual(["fails", "passes"]);
+  });
+
   it("returns null for a run that doesn't exist", async () => {
     expect(await runSuite(db, 999, local)).toBeNull();
   });

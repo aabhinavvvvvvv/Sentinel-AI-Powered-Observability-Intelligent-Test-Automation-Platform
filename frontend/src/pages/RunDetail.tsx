@@ -40,7 +40,8 @@ export function RunDetail() {
         <h1>Run #{run.id}</h1>
         <span className={`badge ${runBadge(run.status)}`}>{run.status.toUpperCase()}</span>
         <span className="muted">
-          {run.triggered_by} · {localTime(run.created_at)}
+          {run.triggered_by} · {run.run_order === "priority" ? "suggested order (riskiest first) · " : ""}
+          {localTime(run.created_at)}
         </span>
       </header>
 

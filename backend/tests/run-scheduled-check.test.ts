@@ -67,7 +67,7 @@ describe("runScheduledCheck", () => {
     const endpoint = await addEndpoint({ max_retries: 2 });
     failuresLeft = 99; // always fails
     const outcome = await runScheduledCheck(db, endpoint.id, options);
-    expect(outcome?.check).toMatchObject({ ok: false, error_type: "unexpected_status" });
+    expect(outcome?.check).toMatchObject({ ok: false, error_type: "server_error" });
     expect(hits).toBe(3); // 1 try + 2 retries
   });
 

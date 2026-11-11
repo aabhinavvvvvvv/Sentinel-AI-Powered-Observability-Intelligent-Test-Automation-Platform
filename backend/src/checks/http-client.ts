@@ -18,6 +18,7 @@ export type NetworkErrorType =
   | "timeout" // no answer in time
   | "dns" // the website name doesn't exist
   | "connection_refused" // the computer exists but nothing is listening
+  | "connection_reset" // the server hung up in the middle of the conversation
   | "tls" // HTTPS certificate problem
   | "network"; // any other network problem
 
@@ -125,6 +126,7 @@ function describeError(err: unknown): [NetworkErrorType, string] {
   if (code === "SSRF_BLOCKED") return ["blocked", message];
   if (code === "ENOTFOUND" || code === "EAI_AGAIN") return ["dns", message];
   if (code === "ECONNREFUSED") return ["connection_refused", message];
+  if (code === "ECONNRESET") return ["connection_reset", message];
   if (/CERT|TLS|SSL/.test(code)) return ["tls", message];
   return ["network", message || "Unknown network error"];
 }

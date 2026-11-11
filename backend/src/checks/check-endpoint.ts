@@ -9,7 +9,21 @@
 import type { Endpoint } from "../endpoints/schemas.js";
 import { sendRequest, type NetworkErrorType } from "./http-client.js";
 
-export type CheckErrorType = NetworkErrorType | "unexpected_status"; // it answered, but with the wrong status
+// It answered, but with the wrong status. The status number says what kind of answer it was.
+export type StatusErrorType =
+  | "redirect" // 3xx: "go to another address"
+  | "client_error" // 4xx: the server says OUR request is wrong (404 not found, 401 not allowed)
+  | "server_error" // 5xx: the server itself broke
+  | "unexpected_status"; // anything else, e.g. 200 when the check expects 404
+
+export type CheckErrorType = NetworkErrorType | StatusErrorType;
+
+export function statusErrorType(status: number): StatusErrorType {
+  if (status >= 300 && status < 400) return "redirect";
+  if (status >= 400 && status < 500) return "client_error";
+  if (status >= 500 && status < 600) return "server_error";
+  return "unexpected_status";
+}
 
 export interface CheckResult {
   ok: boolean;
@@ -40,12 +54,14 @@ export async function checkEndpoint(
     };
   }
   const ok = res.status === endpoint.expected_status;
+  // For a redirect, say where it points: that's usually the fix ("register the www. address").
+  const target = res.headers.location ? ` → ${res.headers.location}` : "";
   return {
     ok,
     status_code: res.status,
     response_time_ms: res.response_time_ms,
-    error_type: ok ? null : "unexpected_status",
-    error_message: ok ? null : `Expected status ${endpoint.expected_status}, got ${res.status}`,
+    error_type: ok ? null : statusErrorType(res.status),
+    error_message: ok ? null : `Expected status ${endpoint.expected_status}, got ${res.status}${target}`,
     checked_at: checkedAt,
   };
 }

@@ -4,7 +4,7 @@
  * allowPrivateAddresses: true. The SSRF tests leave it off on purpose.
  */
 import { createServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer as createNetServer, type AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { checkEndpoint, type CheckTarget } from "../src/checks/check-endpoint.js";
 
@@ -45,9 +45,27 @@ describe("checkEndpoint (fake website)", () => {
     expect(result.checked_at).toBeInstanceOf(Date);
   });
 
-  it("reports the wrong status code as unexpected_status", async () => {
-    const result = await checkEndpoint(target("/broken"), local);
-    expect(result).toMatchObject({ ok: false, status_code: 500, error_type: "unexpected_status" });
+  it("names a wrong status by its kind: 5xx server_error, 4xx client_error, 3xx redirect", async () => {
+    expect(await checkEndpoint(target("/broken"), local)).toMatchObject({ status_code: 500, error_type: "server_error" });
+    expect(await checkEndpoint(target("/missing"), local)).toMatchObject({ status_code: 404, error_type: "client_error" });
+    const redirect = await checkEndpoint(target("/redirect"), local);
+    expect(redirect).toMatchObject({ ok: false, status_code: 301, error_type: "redirect" });
+    expect(redirect.error_message).toBe("Expected status 200, got 301 → http://127.0.0.1:1/"); // says where it points
+  });
+
+  it("reports unexpected_status for a success that wasn't expected (200 when 404 was)", async () => {
+    const result = await checkEndpoint(target("/ok", { expected_status: 404 }), local);
+    expect(result).toMatchObject({ ok: false, status_code: 200, error_type: "unexpected_status" });
+  });
+
+  it("reports connection_reset when the server hangs up mid-request", async () => {
+    // A raw TCP server that reads the request, then slams the connection shut (a "reset").
+    const rude = createNetServer((socket) => socket.on("data", () => socket.resetAndDestroy()));
+    await new Promise<void>((resolve) => rude.listen(0, "127.0.0.1", resolve));
+    const port = (rude.address() as AddressInfo).port;
+    const result = await checkEndpoint({ ...target(""), url: `http://127.0.0.1:${port}/` }, local);
+    rude.close();
+    expect(result).toMatchObject({ ok: false, status_code: null, error_type: "connection_reset" });
   });
 
   it("is ok when the status matches expected_status, even if it is not 200", async () => {

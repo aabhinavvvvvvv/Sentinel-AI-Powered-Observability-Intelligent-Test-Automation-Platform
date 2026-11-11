@@ -194,7 +194,11 @@ A check result looks like this:
 {"ok":true,"status_code":200,"response_time_ms":241,"error_type":null,"error_message":null,"checked_at":"2026-11-10T19:57:53.641Z"}
 ```
 
-`error_type` is one of `blocked`, `timeout`, `dns`, `connection_refused`, `tls`, `unexpected_status`, `network`.
+`error_type` is one of:
+- no answer: `blocked` (SSRF guard), `timeout`, `dns`, `connection_refused`, `connection_reset` (server hung up mid-request), `tls`, `network` (anything else)
+- wrong status: `redirect` (3xx; the message says where it points), `client_error` (4xx), `server_error` (5xx), `unexpected_status` (e.g. 200 when 404 was expected)
+
+Migration 008 re-labelled older history with the same rules.
 
 **Safety:** Sentinel refuses to visit private/internal addresses (localhost, 10.x, 192.168.x, 169.254.169.254, etc.) and does not follow redirects. This blocks SSRF attacks, and it also means you can't monitor services on your own machine or home network.
 

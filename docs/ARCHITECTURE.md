@@ -207,6 +207,14 @@ After every **scheduled** check, the worker runs `incidents/update-incidents.ts`
 - A partial unique index (`endpoint_id WHERE resolved_at IS NULL`) guarantees at most one open incident per endpoint, even if two workers race. Inserts use `ON CONFLICT ... DO NOTHING`.
 - The rule returns `opened` / `resolved` / null. The worker logs it; M6 will send email on it.
 - API: `GET /incidents?status=&endpoint_id=&limit=`, joined with the endpoint name.
+- API: `GET /incidents/:id/report` returns evidence for one incident, computed from stored data (no ML, no LLM):
+  - `window`: start to end (open incidents end at "now")
+  - `failed_checks`: count by category inside the window
+  - `response_time_ms`: median of OK checks in the hour and the week before the start
+  - `similar`: earlier resolved incidents, same endpoint and category, previous 7 days. `flapping` = ≥ 3 of them with a median duration ≤ 10 min.
+  - `failing_tests`: failed test cases of this endpoint's suites inside the window
+  - `suggestions`: a fixed checklist per category, shown as "suggestions, not a diagnosis"
+- Dashboard: `/incidents/:id`, linked from the overview ("evidence") and from the endpoint's incident table.
 
 ### Schema: `incidents`
 

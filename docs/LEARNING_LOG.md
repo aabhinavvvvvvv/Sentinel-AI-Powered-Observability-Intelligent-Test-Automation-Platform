@@ -647,6 +647,77 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 24 — 2026-11-11 — Phase 5: prediction experiment ("slow next hour?")
+
+**What we built**
+- `make_slowdown_dataset` (`ml/synthetic.py`): one slowdown per 2-day block. Creeping problems give 5 warning hours; sudden ones give none.
+- `ml/prediction.py`: answer key split into "still slow" / "creeping starts" / "sudden starts", a persistence baseline, an early-warning rule, and a Random Forest. Results are in `docs/EXPERIMENTS.md`, Experiment 3.
+
+**Concepts (simple words)**
+- Detection = "wrong now". Prediction = "wrong soon".
+- Supervised learning: learn from examples that come with the answer.
+- Target = the answer to predict (slow next hour?). Horizon = how far ahead (1 hour).
+- Persistence baseline: "next hour = this hour". Very strong when problems last for hours.
+- Decision tree: a flowchart of yes/no questions learned from data. Random Forest: 100 trees each trained on a slightly different sample of the data; they vote, and the share of "slow" votes is the model's probability.
+- You can only predict what gives warning signs. Sudden problems: 0 of 30 caught by every method, as expected.
+- Leakage guard: the last training hour's answer is about the first test hour, so it's left out. A test flips all future answers and checks the predictions don't change (a deliberate-bug check proved the test works).
+- Always compare ML with the simplest rule that uses the same idea. Here "warn at +20%" matched the forest.
+
+**Verification**
+- Python 45 passed. `python -m ml.prediction`: held-out F1 0.85–0.86 for every method. Early warnings for creeping problems: rule 18/20, forest 16/20, persistence 8/20.
+
+**Mistake recorded**
+- I undid a deliberate-bug check with `git checkout <file>`, which reset the whole file to the last commit and wiped the uncommitted work. Rewrote it and confirmed identical results. Lesson: undo a deliberate bug with the reverse edit, not `git checkout`.
+
+**Next step**
+- Phase 6 (failure categories), or the worker heartbeat ("monitor the monitor").
+
+---
+
+### Session 25 — 2026-11-11 — Phase 6 step 1: finer failure categories
+
+**Looked at the real data first**
+- 1,701 failed checks, only 5 distinct messages, all written by our own code, so rules classify them perfectly. ML text classification (TF-IDF) only pays off on messy, varied text, so it isn't used here.
+- 36 timeout incidents of about 2 minutes each: flapping, i.e. one unstable problem counted as many incidents.
+
+**What we built**
+- New categories, decided at check time: `connection_reset` (ECONNRESET: the server hung up mid-request), `redirect` (3xx; the message now says where it points), `client_error` (4xx), `server_error` (5xx). `unexpected_status` stays for e.g. "200 when 404 was expected".
+- Migration 008 re-labels old rows with the same rules. Incidents have no status column, so the code is read from the message with a regex.
+
+**Concepts (simple words)**
+- Classification = sorting things into a few named groups. Rules first; ML only when rules can't keep up with the variety.
+- A data migration (changing existing rows, not just the table shape) needs its own test: insert old-style rows, run the SQL, check the result.
+- Status code families: 3xx = go elsewhere, 4xx = your request is wrong, 5xx = the server broke.
+
+**Verification**
+- Backend 228/228 (+3 tests: status families, 200-when-404, a real TCP server that resets the connection; migration test). Typecheck and lint clean.
+- Dev DB: `npm run migrate` applied 008. Real rows are now connection_reset 577, redirect 932, timeout 212, network 2.
+
+**Next step**
+- Incident report with evidence.
+
+---
+
+### Session 26 — 2026-11-11 — Phase 6 step 2: incident report (evidence)
+
+**What we built**
+- `backend/src/incidents/report.ts` + `GET /incidents/:id/report`: five small SQL queries, one per question (what failed, already slow?, happened before?, which tests failed?, plus the incident itself).
+- `frontend/src/pages/IncidentDetail.tsx` at `/incidents/:id`, linked from the overview and the endpoint page.
+
+**Concepts (simple words)**
+- Evidence vs diagnosis: the report shows measured facts. The suggestions are a generic checklist per category and say so. We never claim "the cause is X".
+- A written rule beats a vague label: "flapping = ≥ 3 similar incidents in 7 days, median ≤ 10 min" is shown on the page, so anyone can check it.
+- Time windows: every query is limited to "inside the incident" or "before it started". Something after the incident must not count; a test checks exactly that.
+
+**Verification**
+- Backend 232 tests (+4 report tests), typecheck and lint clean. Frontend 34 tests (+2), build OK.
+- Real incident #48 (test website): 3 timeouts in 1.5 min; response time before was normal (250 vs 254 ms); 41 similar incidents in 7 days, median 2 min → flapping.
+
+**Next step**
+- Optional: TF-IDF experiment / LLM summary (needs a decision on cost), or the worker heartbeat, or Phase 7 (test prioritisation).
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

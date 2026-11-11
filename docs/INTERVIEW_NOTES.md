@@ -14,7 +14,7 @@ Every number here comes from a real test run or experiment in this repo. Don't r
 > synthetic data, and showed that feature engineering doubled the ML model's F1, from 0.44 to 0.86.
 > It's Node/TypeScript, PostgreSQL, Redis/BullMQ, React, and Python/FastAPI, with about 300 automated tests."
 
-Test counts at the time of writing: backend 225, frontend 32, Python 38.
+Test counts at the time of writing: backend 232, frontend 34, Python 45.
 
 ---
 
@@ -71,6 +71,12 @@ Browser (React) ──/api──▶ Node/Express API ──▶ PostgreSQL  (sour
 - **Exactly-once run start:** `UPDATE test_runs SET status='running' WHERE id=$1 AND status='queued'`. Only one worker can win.
 - **No automatic retries,** because a test may have sent a real POST or DELETE. The response body read is capped at **1 MB** so a huge response can't exhaust memory.
 
+### Failure categories + incident evidence (Phase 6)
+- **Looked at the data before choosing ML:** 1,701 failed checks had only 5 distinct messages, all written by my own code. Rules classify those perfectly, so I didn't build a text classifier.
+- **Finer categories:** `connection_reset`, `redirect` (the message says where it points), `client_error` (4xx), and `server_error` (5xx). A tested data migration re-labelled the history.
+- **Incident report:** measured evidence per incident: failures by category, response time before vs normal, similar past incidents, API tests that failed in the same window, and a category checklist labelled "suggestions, not a diagnosis".
+- **Real finding:** one site had 41 short timeout incidents in 7 days (median 2 min). The report flags it as **flapping** using a stated rule (≥ 3 in 7 days, median ≤ 10 min).
+
 ### Python service + contract
 - Node calls `POST /analyze/{id}` hourly and **validates the response shape** (Zod) before saving. A broken answer from Python is rejected, not stored.
 - Saving is **idempotent**: `UNIQUE (endpoint_id, metric, bucket_start, method)`, because the 48-hour lookback re-reports the same hours every run.
@@ -94,7 +100,11 @@ Browser (React) ──/api──▶ Node/Express API ──▶ PostgreSQL  (sour
    A tie with different personalities: statistics give fewer false alarms, ML gives fewer misses.
 8. **Shadow mode (built):** both now run live every hour next to the old rule. Each finding is saved with its `method` and shown with a SHADOW tag; nothing is promoted until real data supports it. Building it surfaced a quirk: Isolation Forest can raise an **"echo" false alarm on the hour right after a spike**, because its "vs previous hour" feature sees a sudden drop. I recorded it rather than quietly re-tuning, because changing the model would mean redoing the fair experiment.
 
+9. **Prediction experiment ("will the next hour be slow?"):** supervised Random Forest vs a persistence baseline ("next hour = this hour") vs a simple early-warning rule ("≥ 20% above usual"). On 10 held-out synthetic datasets all three scored F1 ≈ 0.86. Early warnings for creeping slowdowns: rule 18/20, forest 16/20, persistence 8/20. Sudden slowdowns: 0/30 for every method, as expected, since nothing warns about them. **I did not ship the model**, because it didn't beat a one-line rule (ADR-015). A test proves no leakage: flipping all future answers leaves the predictions unchanged.
+
 **One-line lesson:** "Understanding the data (the daily rhythm) mattered more than the algorithm."
+
+**Second lesson:** "Always compare ML with the simplest rule that uses the same idea. Here the rule won, so the rule is what I'd ship."
 
 **Interview phrase:** "shadow mode": run a new model live, log its output, compare, and only then let it make decisions. It's how real teams introduce models safely.
 

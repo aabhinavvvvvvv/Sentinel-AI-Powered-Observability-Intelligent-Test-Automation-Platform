@@ -185,7 +185,9 @@ export function EndpointDetail() {
             <tbody>
               {incidents.map((i) => (
                 <tr key={i.id}>
-                  <td>{localTime(i.started_at)}</td>
+                  <td>
+                    <Link to={`/incidents/${i.id}`}>{localTime(i.started_at)}</Link>
+                  </td>
                   <td>{i.resolved_at ? localTime(i.resolved_at) : <strong className="error">ongoing</strong>}</td>
                   <td>
                     {formatDuration(

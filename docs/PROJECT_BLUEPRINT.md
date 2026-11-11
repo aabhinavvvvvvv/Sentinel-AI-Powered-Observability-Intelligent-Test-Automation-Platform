@@ -223,7 +223,7 @@ These are proposed choices. Review the existing repository and explain any chang
 - Evaluate and visualize results.
 
 ### Phase 5 — ML anomaly detection and predictive experiments
-> **Status (2026-11-11):** experiments 1–2 done on SYNTHETIC data (`docs/EXPERIMENTS.md`). On 10 held-out datasets: same-hour statistics (cut-off 4.5) F1 0.88, Isolation Forest v2 with engineered features (5%) F1 0.86, Isolation Forest v1 0.44, live 24-hour rule 0.35. Both best methods now run live in **shadow mode** (ADR-014), saved and labelled, awaiting real-data evidence. Predictive analysis not started.
+> **Status (2026-11-11):** experiments 1–2 done on SYNTHETIC data (`docs/EXPERIMENTS.md`). On 10 held-out datasets: same-hour statistics (cut-off 4.5) F1 0.88, Isolation Forest v2 with engineered features (5%) F1 0.86, Isolation Forest v1 0.44, live 24-hour rule 0.35. Both best methods now run live in **shadow mode** (ADR-014), saved and labelled, awaiting real-data evidence. Experiment 3 (prediction, "slow next hour?", synthetic): a Random Forest tied with a simple "≥ 20% above usual" rule (held-out F1 0.86 each; early warnings 16/20 vs 18/20; sudden problems 0/30 for all), so no prediction model ships (ADR-015).
 
 - Compare statistical baseline with Isolation Forest.
 - Define predictive target and horizon.
@@ -231,6 +231,8 @@ These are proposed choices. Review the existing repository and explain any chang
 - Evaluate honestly and persist results.
 
 ### Phase 6 — Failure classification and incident assistance
+> **Status (2026-11-11):** real data had 1,701 failed checks but only 5 distinct messages, all written by our own code, so rules are exact and an ML text classifier would add nothing here (TF-IDF deferred to an optional, clearly labelled experiment). Step 1 ✅ finer rule categories: `connection_reset`, `redirect`, `client_error`, `server_error` (migration 008 re-labels history). Step 2 ✅ incident report (`GET /incidents/:id/report` + `/incidents/:id` page): window, failed checks by category, median response time before, similar incidents and a stated flapping rule, failing API tests in the window, and suggestions labelled "not a diagnosis". On real data it flagged the test website as flapping (41 similar timeouts in 7 days, median 2 min). Not built: optional TF-IDF experiment, LLM summary.
+
 - Error normalization.
 - Rule-based categories.
 - TF-IDF/classification experiment.

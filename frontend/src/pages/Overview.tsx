@@ -54,7 +54,8 @@ export function Overview() {
                 🔴 <Link to={`/endpoints/${i.endpoint_id}`}>{i.endpoint_name}</Link>
               </strong>{" "}
               down since {localTime(i.started_at)} ({timeAgo(i.started_at)})
-              <span className="muted"> · {i.error_message ?? i.error_type}</span>
+              <span className="muted"> · {i.error_message ?? i.error_type}</span> ·{" "}
+              <Link to={`/incidents/${i.id}`}>evidence</Link>
             </li>
           ))}
         </ul>

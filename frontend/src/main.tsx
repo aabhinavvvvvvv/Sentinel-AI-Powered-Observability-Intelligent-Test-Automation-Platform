@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router";
 import { EndpointDetail } from "./pages/EndpointDetail";
+import { IncidentDetail } from "./pages/IncidentDetail";
 import { Overview } from "./pages/Overview";
 import { RunDetail } from "./pages/RunDetail";
 import { SuiteDetail } from "./pages/SuiteDetail";
@@ -24,6 +25,7 @@ createRoot(document.getElementById("root")!).render(
         {/* ":id" is a placeholder: /endpoints/23 shows website 23 */}
         <Route path="/" element={<Overview />} />
         <Route path="/endpoints/:id" element={<EndpointDetail />} />
+        <Route path="/incidents/:id" element={<IncidentDetail />} />
         <Route path="/suites" element={<Suites />} />
         <Route path="/suites/:id" element={<SuiteDetail />} />
         <Route path="/suites/:id/runs/:runId" element={<RunDetail />} />

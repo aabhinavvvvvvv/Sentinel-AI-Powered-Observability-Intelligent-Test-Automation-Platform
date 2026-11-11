@@ -39,6 +39,17 @@ export interface Incident {
   error_message: string | null;
 }
 
+/** GET /incidents/:id/report: measured evidence for one incident, plus suggestions (not a diagnosis). */
+export interface IncidentReport {
+  incident: Incident & { url: string };
+  window: { from: string; to: string; open: boolean; minutes: number };
+  failed_checks: { total: number; by_type: { error_type: string; count: number }[] };
+  response_time_ms: { p50_hour_before: number | null; p50_week_before: number | null };
+  similar: { days: number; count: number; median_minutes: number | null; flapping: boolean };
+  failing_tests: { suite_id: number; run_id: number; case_name: string; message: string | null; at: string }[];
+  suggestions: string[];
+}
+
 export interface CheckResult {
   id: number;
   endpoint_id: number;
@@ -187,6 +198,7 @@ export const api = {
   listIncidentsFor: (id: number) => request<Incident[]>(`/incidents?endpoint_id=${id}`),
   checkNow: (id: number) => request<CheckResult>(`/endpoints/${id}/check`, { method: "POST" }),
   listAnomalies: (id: number) => request<Anomaly[]>(`/endpoints/${id}/anomalies?limit=20`),
+  getIncidentReport: (id: number) => request<IncidentReport>(`/incidents/${id}/report`),
 
   // Analytics
   getStats: (id: number, range: StatsRange) => request<EndpointStats>(`/endpoints/${id}/stats?window=${range}`),

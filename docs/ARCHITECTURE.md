@@ -364,6 +364,31 @@ sequenceDiagram
 - Suite PATCH = merge into the stored suite, then validate (`SuiteSettingsSchema`).
 - Frontend: top nav (Websites / API tests). `/suites` lists suites with their last run and has a create form. `/suites/:id` has Run now, a schedule picker, run history, cases, and "add case" as pasted JSON (validated by the backend). `/suites/:id/runs/:runId` shows per-case PASS/FAIL with reasons. Pages poll every 3 s while runs progress.
 
+### Test prioritisation (Phase 7, `src/testing/priority.ts`)
+
+- `GET /suites/:id/priority` ranks a suite's cases by an **explainable score**. Every point has a named reason. Points are not probabilities.
+  - Never run yet, or edited since its last run: **+30**
+  - Failed in the last run: **+40**
+  - Failed *k* of its last *n* runs (n ≤ 10): **+round(30 × k / n)**
+  - Ties keep the normal run order (`ORDER BY id`; JS `sort` is stable).
+- **Warning, not points:** a case that failed all of its last ≥ 5 runs gets "the test itself may be wrong, not the API".
+- **Endpoint trouble** (an open incident, or failed health checks in the last hour) is returned as a suite-level note. A suite tests one endpoint, so per-case points would be equal for every case and couldn't change the order.
+- `scoreCase()` is a pure function, and `rankCases(db, suiteId, at)` only reads history from **before `at`**, so old runs can be replayed later without peeking at the future.
+- The SQL takes each case's last 10 results with `row_number() OVER (PARTITION BY case_id ORDER BY created_at DESC)`.
+- It only **suggests an order**: every case still runs. The suite page shows a "Suggested order" table with reasons.
+- **Running in that order (step 2):**
+  - Migration 009 adds `test_runs.run_order` (`default` | `priority`, default `default`).
+  - `POST /suites/:id/runs` takes `{ "order": "priority" }`.
+  - `runSuite` sorts the cases with `rankCases` before running them. A case the ranking doesn't know goes last, so it is **never dropped**.
+  - Results are saved in the order they ran, so the run page shows that order.
+  - Scheduled runs use the normal order.
+- **Replay experiment (step 3):**
+  - `replay.ts` holds the APFD maths, `suggestedOrder` (it reuses `scoreCase`, so there is one copy of the rule) and `loadHistory`.
+  - `synthetic-history.ts` makes up SYNTHETIC history.
+  - `npm run replay` prints the results.
+  - It's offline analysis only: nothing in the API or worker calls it.
+  - Results are in `docs/EXPERIMENTS.md`, Experiment 4.
+
 ### Known gap: nobody watches the worker
 
 During development the worker process died (most likely while reloading a half-edited file). The API kept answering 200 on `/healthz`, but **no checks or runs happened for ~8 minutes and nothing reported it**: jobs simply waited in Redis. Mitigations for later: a process manager / Docker `restart: always` (Phase 8), and a worker heartbeat (e.g. "last check saved" age) exposed in `/healthz` and the dashboard.

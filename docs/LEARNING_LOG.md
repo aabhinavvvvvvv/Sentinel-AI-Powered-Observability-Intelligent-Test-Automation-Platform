@@ -718,6 +718,109 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 27 — 2026-11-12 — Phase 7 step 1: explainable test priority
+
+**What we built**
+- `backend/src/testing/priority.ts`:
+  - `scoreCase()` is the rule as a pure function: +30 never run/edited, +40 failed last run, up to +30 for the share of recent failures, and a warning when a case always fails.
+  - `rankCases(db, suiteId, at)` collects each case's last 10 results from before `at` and sorts by score.
+- `GET /suites/:id/priority`, plus a "Suggested order" table on the suite page.
+
+**Concepts (simple words)**
+- Prioritisation vs selection: change the order, never skip. Skipping saves time but can miss failures.
+- Explainable score: points with a reason each. Points are not probabilities.
+- Check that a signal can actually change the result. "Endpoint in trouble" would give every case in a suite the same points, so it became a suite-level note.
+- An always-failing test is more likely a broken test than a broken API.
+- `row_number() OVER (PARTITION BY …)`: number each case's results 1, 2, 3… from the newest, then keep `n <= 10`.
+
+**Verification**
+- Backend 238 tests (+6), typecheck and lint clean.
+  - A deliberate bug (reversed sort) made the ranking test fail.
+- Frontend 35 tests (+1), build OK.
+- Real suite: "Deliberately wrong" ranks first (70, with the warning), and "Get user 1" (case 1) scores +3 for 1 failure in its last 10 runs.
+
+**Next step**
+- Step 2: run a suite in priority order (a run option, saved on the run).
+
+---
+
+### Session 28 — 2026-11-12 — Phase 7 step 2: run in the suggested order
+
+**What we built**
+- Migration 009: `test_runs.run_order` (`default` | `priority`). Old runs become `default`, which is what they used.
+- `POST /suites/:id/runs` takes an optional `{"order": "priority"}`; a wrong value gets a 400.
+- `runSuite` sorts the cases by score first.
+- A "Run in suggested order" button, plus a label in the run history and on the run page.
+
+**Concepts (simple words)**
+- Same cases, different order. A case the ranking doesn't know goes last; it is never dropped.
+- `"order"` is an SQL keyword, so the column is called `run_order`.
+- Results are saved in the order they ran, so the run page shows the real order.
+
+**Verification**
+- Backend 240 tests (+2), typecheck and lint clean. Frontend 35 tests, build OK. Migration applied to the dev DB.
+- Runner test with real history: run 1 (normal order) runs `passes, fails`. Run 2 (priority) runs `fails, passes`.
+- A deliberate bug (ignoring the order setting) made that test fail.
+
+**Next step**
+- Step 3: replay old runs and measure whether the suggested order finds failures earlier (APFD), compared with the normal order.
+
+---
+
+### Session 29 — 2026-11-12 — Phase 7 step 3: does the order help? (replay)
+
+**What we built**
+- `backend/src/testing/replay.ts`: `apfd()`, `suggestedOrder()` (reuses `scoreCase`), `replay()` and `loadHistory()`.
+- `synthetic-history.ts`: two made-up worlds ("repeating" bugs, "random" failures), seeded.
+- `npm run replay`, with results in EXPERIMENTS.md (Experiment 4).
+
+**Concepts (simple words)**
+- APFD: one number for "how early did the failures show up?". 1 is best; about 0.5 is what a random order gets.
+- Replay without peeking: each past run is ordered using only the runs before it.
+- A control group: the "random" world, where no method *can* help. If the method looked good there, the replay itself would be broken.
+- No tuning means no held-out split is needed. The weights were fixed before we looked at any replay results.
+- Real numbers can mislead: the real gain came from a test that fails on purpose.
+
+**Verification**
+- Backend 247 tests (+7), typecheck and lint clean.
+- A deliberate peek-ahead bug (`slice(0, k + 1)`) made 2 replay tests fail.
+- Results:
+  - "repeating" world: APFD 0.49 → 0.77, better on 10/10 seeds
+  - "random" world: 0.50 → 0.51, better on 5/10 seeds
+  - real demo suite: 0.47 → 0.88 (from the always-failing test)
+
+**Next step**
+- Optional: learned weights (logistic regression) vs the hand rule, on synthetic data; or the worker heartbeat; or Phase 8 polish.
+
+---
+
+### Session 30 — 2026-11-12 — Phase 7 step 4: learned weights vs the hand rule
+
+**What we built**
+- `analytics/ml/prioritization.py` (SYNTHETIC experiment):
+  - a NumPy port of the two worlds
+  - features from earlier runs only
+  - the hand rule
+  - a logistic regression learning from runs 1–100 and judged by APFD on runs 101–200
+- `tests/test_prioritization.py`, 5 tests.
+
+**Concepts (simple words)**
+- Logistic regression: multiply each signal by a learned weight, add them up, and turn the total into a chance between 0 and 1.
+- For *ordering*, only the ranking matters. Two different sets of weights can give the exact same order.
+- Time split: learn from the past, judge on the future. Changing the future must not change the model, and a test checks that.
+- Noise: a 0.02 difference over 10 seeds turned into 0.002 over 100 seeds. Compare a difference with the seed-to-seed spread before believing it.
+
+**Verification**
+- Python 50 passed (+5). A deliberate leak (training on 20 test runs) made the time-split test fail.
+- Results:
+  - repeating world: hand 0.800, learned 0.795, identical order on 7/10 seeds; learned weights: failed_last_run +4.11, failure_share +0.16
+  - random world: everything ≈ 0.50, with learned weights ≈ 0
+
+**Next step**
+- Worker heartbeat ("monitor the monitor"), or Phase 8 polish (Docker, CI, security review, demo data).
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

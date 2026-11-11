@@ -240,6 +240,13 @@ These are proposed choices. Review the existing repository and explain any chang
 - Optional LLM integration with safeguards.
 
 ### Phase 7 — Intelligent test prioritization
+> **Status (2026-11-12):** step 1 ✅ explainable score (`GET /suites/:id/priority` + "Suggested order" on the suite page): +30 never run/edited, +40 failed last run, up to +30 for the recent failure share; a warning when a case always fails; endpoint trouble shown as a suite-level note (ADR-016). It only suggests an order and never skips a test. Step 2 ✅ "Run in suggested order" (`{"order": "priority"}`, saved as `test_runs.run_order`, migration 009); scheduled runs keep the normal order. Step 3 ✅ replay experiment (Experiment 4, `npm run replay`):
+- When failures repeat (synthetic), APFD rose from 0.49 to 0.77 and the first failure came at test 3.8 instead of 9.1 of 20 (better on 10/10 seeds).
+- When failures are random (synthetic control), there was no gain (0.50 vs 0.51).
+- On the real demo suite the gain (0.47 → 0.88) comes from a deliberately broken test, so it isn't evidence of real value yet.
+
+Step 4 ✅ learned weights (Experiment 5, synthetic): logistic regression on the same two signals tied the hand rule (APFD 0.795 vs 0.800; identical order on 7/10 seeds) and learned ≈ zero weights when failures are random, so the hand rule stays. **Phase 7 complete.**
+
 - Define risk signals and scoring.
 - Rank tests with explanations.
 - Compare time and outcomes against full-suite mode.

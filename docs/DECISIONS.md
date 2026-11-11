@@ -262,3 +262,25 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 **Trade-offs.** The project has no live predictive feature. The early-warning rule is effectively a lower anomaly threshold, which the same-hour detector in shadow mode already approximates.
 
 **Revisit if.** We have more signals per hour (error rate, request volume, deploy times) or real incidents that show warning patterns a single threshold misses.
+
+## ADR-016 — Test prioritisation: a rule-based points score that reorders but never skips
+
+**Date:** 2026-11-12 · **Status:** Accepted
+
+**Context.** Phase 7 should run the tests most likely to fail first and explain why. Real history is tiny: 1 suite, 5 cases, 50 runs.
+
+**Decision.** Use a hand-written points score with a named reason for every point:
+- never run or edited: +30
+- failed last run: +40
+- recent failure share: up to +30
+
+The score only changes the suggested **order**; every case still runs. A case that always fails gets a warning. Endpoint trouble is a suite-level note, not per-case points.
+
+**Options considered.**
+- *Learned model* (e.g. logistic regression on history): there is too little real data to learn from, and weights would be hard to explain. Tried later on synthetic data (Experiment 5): it gave the same order as the rule on 7 of 10 seeds and was no better overall.
+- *Test selection* (skip low-risk tests): faster, but it can miss failures. The project rule says never silently drop tests.
+- *Endpoint trouble as points:* a suite tests one endpoint, so every case would get the same points and the order wouldn't change.
+
+**Trade-offs.** The weights are judgement calls, not fitted. Points are not probabilities. A permanently broken test always ranks first, which is why the warning exists.
+
+**Revisit if.** The replay comparison (APFD vs normal order) shows the score doesn't find failures earlier, or suites grow large enough for a learned model to beat the rule on held-out runs.

@@ -135,3 +135,74 @@ Development results were nearly identical (F1 0.85–0.87), so there was no sign
 - **Persistence's "early warnings" are partly luck:** a +29% hour is sometimes *measured* above +30% because of random wobble.
 - **Leakage guard tested:** flipping every answer from the last training hour onward leaves the forest's predictions unchanged. With a deliberate bug (training on 3 test days), that test fails.
 - **Decision:** no prediction model ships. ML would be worth revisiting with richer signals (error rate, traffic, deploy events) or real incidents with warning patterns (ADR-015).
+
+## Experiment 4 — Does the suggested test order find failures sooner?
+
+**Question:** in past runs, would the Phase 7 priority score (ADR-016) have run the failing tests earlier than the normal order (by case id)?
+
+**Method (replay, `backend/src/testing/replay.ts`):**
+- For each past run, build both orders for the cases it ran.
+- The suggested order uses **only the runs before it**. A test checks this: changing a run and everything after it leaves that run's order unchanged, and a deliberate peek-ahead bug makes the test fail.
+- Measure two things:
+  - **APFD** (Average Percentage of Faults Detected): with n tests and failures at positions p₁…pₘ, APFD = 1 − Σp / (n·m) + 1/(2n). Closer to 1 means earlier.
+  - **First failure at test N.**
+- Only runs with at least one failure can be scored.
+- The weights were fixed in step 1, **before** any replay. There was no tuning, so no development/held-out split was needed. Changing the weights because of these numbers would need one.
+- Not replayable: "edited since its last run" (old edits aren't recorded).
+
+**Data:**
+- **Real:** the demo suite (5 cases, 50 runs).
+- **SYNTHETIC** (`synthetic-history.ts`): 10 seeds × 200 runs × 20 tests, two made-up worlds with about 5% failures each:
+  - *repeating:* a test breaks and stays broken for 2–6 runs, plus 1% noise.
+  - *random:* every test fails 5% of the time, independently. This is the control: history carries no information.
+
+Reproduce with `cd backend && npm run replay`.
+
+### Results
+
+| History | Runs scored | Normal order: APFD / first failure | Suggested order: APFD / first failure |
+|---|---|---|---|
+| Real demo suite | 50 | 0.471 / test 2.96 | **0.878 / test 1.04** |
+| Synthetic "repeating" (mean of 10 seeds) | ~130 per seed | 0.493 / test 9.05 | **0.771 / test 3.76** (better on 10/10 seeds) |
+| Synthetic "random" (mean of 10 seeds) | ~125 per seed | 0.504 / test 8.63 | 0.508 / test 8.63 (better on 5/10 seeds) |
+
+### What we learned
+
+- **It helps exactly when failures repeat.** In the "repeating" world, the first failure came at test 3.8 instead of 9.1 out of 20.
+- **It doesn't help when failures are random,** which is the expected result: no score can predict coin flips. The control shows no gain, so the replay isn't flattering the method by accident.
+- **The real-data gain is mostly not useful.** It comes from "Deliberately wrong", a test that fails on purpose every run. Finding a known-broken test sooner tells you nothing new, which is why the page warns about always-failing tests.
+- **The synthetic result depends on the assumption we built in** ("bugs stay for a few runs"). Real suites probably sit between the two worlds. Real history with real bugs is needed before claiming a real speed-up.
+- **Decision:** keep the rule (ADR-016). Revisit the weights only with more real history, using a held-out set of runs.
+
+## Experiment 5 — Learned weights vs the hand-written priority rule
+
+**Question:** the step-1 rule uses hand-picked points: `40 × failed_last_run + round(30 × failure_share)`. Does a **logistic regression** that *learns* weights for the same two signals order tests better?
+
+**Data (SYNTHETIC):** the same two worlds as Experiment 4 ("repeating" bugs, "random" failures), ported to NumPy in `analytics/ml/prioritization.py`, so the random numbers differ. 10 seeds × 200 runs × 20 tests.
+
+**Protocol:**
+- **Time split** in each history: the model learns from runs 1–100 and is judged on runs 101–200.
+- Features use only earlier runs. Tests check both rules, and a deliberate leak (training on 20 test runs) makes the test fail.
+- No tuning (scikit-learn defaults).
+- Cross-check of the port: on the test runs, normal APFD ≈ 0.51 and hand rule ≈ 0.80 in the "repeating" world, in line with Experiment 4 (0.49 / 0.77).
+
+Reproduce with `cd analytics && .venv/bin/python -m ml.prioritization`.
+
+### Results (test runs, mean of 10 seeds)
+
+| World | Normal order | Hand rule | Learned (logistic regression) | Learned vs hand |
+|---|---|---|---|---|
+| repeating | 0.511 / test 8.64 | **0.800 / test 3.07** | 0.795 / test 3.17 | better on 1/10 seeds, **7 exact ties** |
+| random | 0.499 / test 8.84 | 0.478 / test 9.19 | 0.502 / test 8.73 | better on 7/10 (all noise, see below) |
+
+Learned weights, mean over seeds:
+- repeating: failed_last_run **+4.11**, failure_share +0.16
+- random: −0.14 and −0.21 (≈ nothing)
+
+### What we learned
+
+- **The learned model mostly gives the same order as the hand rule** (7 of 10 seeds tie exactly). To order tests, only the *ranking* matters, not the exact points. Both say "failed last run" matters most, so they sort the same.
+- **The model confirms the hand rule's main idea from the data.** "Failed last run" got by far the biggest weight. "Failure share" added little, because in this world a fixed bug doesn't come back.
+- **In the "random" world it learned ≈ zero weights.** That is the right answer: history carries no information there.
+- **Noise check:** with 10 seeds, the hand rule looked 0.021 *worse* than the normal order in the random world. Re-run with 100 seeds, the gap was −0.002 ± 0.003 (hand better on 52/100). So it was noise, and 10 seeds can mislead by about 0.02. The 7/10 "wins" for the learned model in that world are noise too.
+- **Decision:** keep the hand rule. It's just as good, needs no training, and every point can be explained. A model would only earn its place with **more signals** than the rule can easily weigh, such as code changes or which files a test touches. Real CI systems have those signals; Sentinel doesn't.

@@ -14,7 +14,7 @@ Every number here comes from a real test run or experiment in this repo. Don't r
 > synthetic data, and showed that feature engineering doubled the ML model's F1, from 0.44 to 0.86.
 > It's Node/TypeScript, PostgreSQL, Redis/BullMQ, React, and Python/FastAPI, with about 300 automated tests."
 
-Test counts at the time of writing: backend 232, frontend 34, Python 45.
+Test counts at the time of writing: backend 247, frontend 35, Python 50.
 
 ---
 
@@ -76,6 +76,21 @@ Browser (React) ──/api──▶ Node/Express API ──▶ PostgreSQL  (sour
 - **Finer categories:** `connection_reset`, `redirect` (the message says where it points), `client_error` (4xx), and `server_error` (5xx). A tested data migration re-labelled the history.
 - **Incident report:** measured evidence per incident: failures by category, response time before vs normal, similar past incidents, API tests that failed in the same window, and a category checklist labelled "suggestions, not a diagnosis".
 - **Real finding:** one site had 41 short timeout incidents in 7 days (median 2 min). The report flags it as **flapping** using a stated rule (≥ 3 in 7 days, median ≤ 10 min).
+
+### Test prioritisation (Phase 7)
+- **Explainable score:** every point has a reason a person can read: "Failed in the last run (+40)", "Failed 3 of its last 10 runs (+9)", "Never run yet (+30)". Points are not probabilities.
+- **Prioritisation, not selection:** it changes the order, never skips a test. Skipping is faster but can miss failures.
+- **A design bug caught before coding:** "endpoint in trouble, +20" would add the same points to every case in a suite (a suite tests one endpoint), so it can't change the order. It became a suite-level note instead.
+- **Always-failing test = probably a broken test.** The demo's "Deliberately wrong" case fails 10 of 10 runs and ranks first, with a warning saying so.
+- **Built for replay:** `rankCases(db, suite, at)` reads only history before `at`. This is the same no-leakage rule as the ML experiments, so old runs can be replayed to measure whether the order finds failures sooner (APFD).
+- **Measured it, with a control:** APFD = 1 − Σ(failure positions)/(n·m) + 1/(2n). Replaying past runs (each ordered using only earlier runs) gave:
+  - synthetic "failures repeat" world: 0.49 → 0.77, first failure at test 3.8 instead of 9.1 of 20, better on 10/10 seeds
+  - synthetic "random failures" control: no gain (0.50 vs 0.51)
+
+  So it helps exactly when failures repeat, and the control proves the replay isn't rigged.
+- **Honest about real data:** the real demo gain (0.47 → 0.88) comes from a test that fails on purpose. That's not evidence of value, and I say so.
+- **Learned vs hand weights:** logistic regression on the same two signals (time split: learn on runs 1–100, judge on 101–200) tied the hand rule (APFD 0.795 vs 0.800) and gave the *identical* order on 7/10 seeds. For ranking, only the order of the weights matters. The model confirmed "failed last run" is the key signal (weight +4.1) and learned ≈ 0 when failures were random. I kept the rule, which is simpler and explainable.
+- **Noise lesson:** with 10 seeds, the hand rule looked 0.02 worse than no ordering in the random world. With 100 seeds the gap was −0.002 ± 0.003. Always check whether a small difference is bigger than the seed-to-seed spread.
 
 ### Python service + contract
 - Node calls `POST /analyze/{id}` hourly and **validates the response shape** (Zod) before saving. A broken answer from Python is rejected, not stored.

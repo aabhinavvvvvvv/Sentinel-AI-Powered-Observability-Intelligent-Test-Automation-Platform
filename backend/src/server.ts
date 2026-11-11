@@ -27,7 +27,7 @@ function main(): void {
 
   // In Express 5 this callback also runs when starting FAILS (e.g. the port is
   // already used by another program), with the error as its argument.
-  const server = app.listen(config.PORT, (err) => {
+  const server = app.listen(config.PORT, config.HOST, (err) => {
     if (err) {
       logger.fatal({ err }, `could not start: ${err.message}`);
       process.exit(1);

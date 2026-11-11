@@ -393,6 +393,12 @@ sequenceDiagram
 
 During development the worker process died (most likely while reloading a half-edited file). The API kept answering 200 on `/healthz`, but **no checks or runs happened for ~8 minutes and nothing reported it**: jobs simply waited in Redis. Mitigations for later: a process manager / Docker `restart: always` (Phase 8), and a worker heartbeat (e.g. "last check saved" age) exposed in `/healthz` and the dashboard.
 
+## Network access (Phase 8, ADR-017)
+
+- No login (a personal project). Instead, the API listens on `HOST`, default **127.0.0.1**, so only this computer can reach it. Postgres, Redis, Mailpit and the Python service are also local only.
+- Inside a Docker container `HOST` must be `0.0.0.0`, and the port is then published on 127.0.0.1 only.
+- The SSRF guard stays: it protects *other* machines from requests Sentinel makes.
+
 ## 11. Analytics service (Phase 4)
 
 ### Step 1: skeleton

@@ -9,6 +9,7 @@ describe("loadConfig", () => {
     expect(config).toEqual({
       NODE_ENV: "development",
       PORT: 3000,
+      HOST: "127.0.0.1", // only this computer can reach the API
       LOG_LEVEL: "info",
       DATABASE_URL: VALID_URL,
       REDIS_URL: "redis://localhost:6379",

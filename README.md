@@ -1,14 +1,23 @@
 # Sentinel
 
+[![CI](https://github.com/aabhinavvvvvvv/Sentinel-AI-Powered-Observability-Intelligent-Test-Automation-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/aabhinavvvvvvv/Sentinel-AI-Powered-Observability-Intelligent-Test-Automation-Platform/actions/workflows/ci.yml)
+
 **AI-Powered Observability & Intelligent Test Automation Platform.**
 
 Sentinel monitors APIs and services, detects abnormal behaviour, helps engineers investigate failures, predicts degradation where historical data supports it, and prioritizes tests based on risk. Full scope: [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md).
 
-> **Status: early development (Phase 3: automated API testing).**
-> Register endpoints and Sentinel checks them automatically on their interval (Redis + BullMQ worker), with retries and SSRF protection. Every result is saved. After N failures in a row an incident is opened, and it is resolved on recovery. An email goes out for each (with retries if the mail server is down). A web dashboard shows every website's status and open incidents, lets you add, pause, and delete websites, and has a detail page per website (settings, uptime and P50/P95/P99 over 24h/7d/30d, a response-time chart, recent checks, incident history, "check now").
-> API testing: suites of request + assertion test cases, run on demand or on a schedule, with per-case results and failure reasons (dashboard: **API tests** tab).
-> Anomaly detection (statistical baseline): a Python service flags unusually slow hours; shown on each website's page.
-> Not yet: ML models, failure classification, test prioritization (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
+> **Status: complete for its purpose (a personal learning project).** Phases 1–8 are done:
+> - **Monitoring:** scheduled checks (Redis + BullMQ worker) with retries and SSRF protection, incidents after N failures in a row, and email alerts.
+> - **Dashboard:** status overview, per-website uptime, P50/P95/P99 and charts.
+> - **API testing:** declarative suites, run on demand or on a schedule.
+> - **Anomaly detection:** statistical, plus two ML detectors in labelled *shadow mode*.
+> - **Failure categories and incident evidence:** a per-incident report.
+> - **Test prioritisation:** an explainable risk score, plus "run in suggested order".
+> - **Experiments:** prediction and learned weights, on labelled **synthetic** data; their honest results are in [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md).
+>
+> - **No login, on purpose** (personal project, ADR-017): the API listens on 127.0.0.1, so only your own computer can reach it.
+>
+> Not built (possible future work): public status pages, SSL-expiry checks, a one-command Docker setup for the app itself, and a worker heartbeat (if the worker process stops, nothing alerts you).
 
 ## Repository layout
 
@@ -19,10 +28,12 @@ sentinel/
 │   └── tests/          Vitest + Supertest tests
 ├── frontend/           React + TypeScript dashboard (Vite)
 │   └── src/            pages, components, API client, tests
-├── analytics/          Python + FastAPI analytics service (Phase 4, early)
-│   ├── app/            the service
+├── analytics/          Python + FastAPI analytics service
+│   ├── app/            the service (anomaly detection, shadow detectors)
+│   ├── ml/             offline experiments on synthetic data (see docs/EXPERIMENTS.md)
 │   └── tests/          pytest tests
-├── docs/               blueprint, architecture, decisions, learning log
+├── docs/               blueprint, architecture, decisions, experiments, learning log
+├── .github/workflows/  CI: runs every check on each push (GitHub Actions)
 ├── docker-compose.yml  local dependencies (PostgreSQL, Redis, Mailpit)
 └── .env.example        configuration template (copy to .env)
 ```
@@ -81,6 +92,18 @@ curl -i http://localhost:3000/healthz
 ```
 
 If PostgreSQL is stopped (`docker compose stop postgres`), the same request returns `503` with `"database":"error"`.
+
+## Continuous integration (CI)
+
+Every push to `main` and every pull request runs [`.github/workflows/ci.yml`](.github/workflows/ci.yml) on GitHub. Three jobs run side by side, each on a fresh machine:
+
+| Job | What it runs |
+|---|---|
+| backend | `npm ci`, typecheck, lint, all tests (with throwaway Postgres + Redis containers), build |
+| frontend | `npm ci`, all tests, build (includes the type check) |
+| analytics | creates the tables with the backend's migrations, then `pytest` |
+
+The badge at the top shows whether the latest run passed. The CI database password is a throwaway: those containers live for one run only.
 
 ## Backend scripts (run inside `backend/`)
 
@@ -143,6 +166,8 @@ Known: pytest shows one `StarletteDeprecationWarning` suggesting `httpx2` instea
 All configuration comes from environment variables, validated at startup by `backend/src/config.ts`. The app refuses to start with a clear message if anything is missing or invalid. See [.env.example](.env.example) for every variable. **Never commit `.env`.**
 
 ## API (current)
+
+There is no login. The API listens on `127.0.0.1` (setting `HOST`), so it can only be reached from this computer (ADR-017).
 
 | Method | Path | Success | Errors |
 |---|---|---|---|

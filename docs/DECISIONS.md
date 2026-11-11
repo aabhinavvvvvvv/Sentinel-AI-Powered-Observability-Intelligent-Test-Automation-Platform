@@ -284,3 +284,15 @@ The score only changes the suggested **order**; every case still runs. A case th
 **Trade-offs.** The weights are judgement calls, not fitted. Points are not probabilities. A permanently broken test always ranks first, which is why the warning exists.
 
 **Revisit if.** The replay comparison (APFD vs normal order) shows the score doesn't find failures earlier, or suites grow large enough for a learned model to beat the rule on held-out runs.
+
+## ADR-017 — No login; the API listens on localhost only
+
+**Date:** 2026-11-12 · **Status:** Accepted
+
+**Context.** Sentinel has no authentication. It is a personal project used by one person on their own computer, and the developer chose not to spend effort on security beyond the SSRF guard. An admin-token login was built and then removed at the developer's request.
+
+**Decision.** No login. The API listens on `HOST` (default `127.0.0.1`) instead of every network interface, so other machines on the network can't reach it. Postgres, Redis, Mailpit and the Python service are already local only. The SSRF guard stays, because it protects other machines from requests Sentinel makes.
+
+**Trade-offs.** Anything running on the same computer can use the API, and so can anyone you expose it to (e.g. by changing `HOST`).
+
+**Revisit if.** Sentinel is deployed anywhere other than your own machine, used by several people, or gets public pages. Then add a login: the simplest is one token in an `Authorization: Bearer` header; the fuller one is user accounts with HttpOnly cookies + CSRF protection.

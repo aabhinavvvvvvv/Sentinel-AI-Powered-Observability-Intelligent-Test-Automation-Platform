@@ -125,6 +125,15 @@ Browser (React) ──/api──▶ Node/Express API ──▶ PostgreSQL  (sour
 
 ---
 
+### CI (Phase 8)
+- GitHub Actions on every push and pull request. Three parallel jobs (backend, frontend, analytics), with throwaway Postgres/Redis **service containers**.
+- `npm ci` installs exact lock-file versions. `permissions: contents: read` gives the job's token only the access it needs (least privilege).
+- **Rehearsed before pushing:** a fresh clone with no `.env` and only the CI variables passed every job. That proves the tests don't depend on my laptop's setup.
+
+### No login, by decision (Phase 8)
+- A personal project for one person, so there's no login. The API listens on **127.0.0.1** only (ADR-017), so other machines can't reach it.
+- **If asked how I'd add one:** the simplest is one token in an `Authorization: Bearer` header, compared in constant time. Browsers never attach headers automatically, so there's no CSRF. For several users: accounts with hashed passwords, HttpOnly session cookies, and CSRF protection.
+
 ## 4. Debugging stories ("tell me about a bug you found")
 
 | Bug | How I found it | Lesson |
@@ -145,7 +154,7 @@ Browser (React) ──/api──▶ Node/Express API ──▶ PostgreSQL  (sour
 - Anomaly detection covers **one metric** (P50 latency), not error rate or availability.
 - If the worker dies, monitoring stops and nothing alerts. A heartbeat or Docker restart policy is planned.
 - Test-case headers (e.g. auth tokens) are stored **unencrypted**.
-- No authentication or multi-user support yet.
+- **No login** (ADR-017): fine on my own computer (the API listens on 127.0.0.1), not fit for deploying anywhere else.
 - Not deployed. Runs locally with Docker Compose for Postgres, Redis and Mailpit.
 
 ---

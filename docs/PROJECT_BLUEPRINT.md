@@ -252,6 +252,13 @@ Step 4 ✅ learned weights (Experiment 5, synthetic): logistic regression on the
 - Compare time and outcomes against full-suite mode.
 
 ### Phase 8 — Polish and delivery
+> **Status (2026-11-12):** plan: 1 CI → 2 network access → 3 Docker for the whole app → 4 worker heartbeat → 5 demo data + walkthrough. Step 1 ✅ GitHub Actions CI (backend / frontend / analytics jobs, throwaway Postgres + Redis service containers), rehearsed locally on a clean clone with no `.env`. Step 2 ✅ no login by decision (personal project, security kept light); instead the API listens on 127.0.0.1 (`HOST`, ADR-017). An admin-token login was built and removed. **Phase 8 wrapped up here by decision (2026-11-12): the project is complete for its purpose.** Possible future work, not built:
+- Docker images for the app itself (one-command start, restart on crash)
+- a worker heartbeat (today a dead worker is noticed only on the dashboard)
+- demo data plus a walkthrough
+- public status pages
+- SSL-expiry checks
+
 - Dashboard refinements.
 - Security review.
 - Tests and CI.

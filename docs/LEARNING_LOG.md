@@ -821,6 +821,57 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 31 — 2026-11-12 — Phase 8 step 1: CI with GitHub Actions
+
+**What we built**
+- `.github/workflows/ci.yml`: on every push to main and every pull request, three jobs run in parallel:
+  - backend: typecheck, lint, tests, build
+  - frontend: tests, build
+  - analytics: migrate, then pytest
+- README: CI badge and section; the outdated status block is fixed.
+
+**Concepts (simple words)**
+- CI: a fresh computer runs every check on every push. It catches "works on my laptop" problems.
+- Service containers: throwaway Postgres/Redis that exist only during the job.
+- `npm ci` vs `npm install`: `ci` installs exactly what `package-lock.json` says, and fails if the lock file doesn't match `package.json`.
+- Least privilege: `permissions: contents: read`, so the job's automatic token can only read the code.
+- Rehearse before you push: CI can't run until the file is on GitHub, so we simulated it on a fresh clone.
+
+**Verification**
+- Local rehearsal on a fresh `git clone` (no `.env`, no `node_modules`, only the CI variables, a brand-new database):
+  - backend 247 passed, typecheck, lint and build OK
+  - frontend 35 passed, build OK
+  - Python 50 passed
+- The analytics job's own path (empty database → `migrate` → `pytest`) was rehearsed separately: 9 migrations applied, 50 passed.
+- The real GitHub run can only happen after a push (not done yet).
+
+**Next step**
+- Step 2: security review + admin-token login.
+
+---
+
+### Session 32 — 2026-11-12 — Phase 8 step 2: no login, API on localhost
+
+**What happened**
+- A security review and an admin-token login were built. The developer then decided security isn't a focus for a personal project, so the login was **removed before committing** (code, tests, login screen, and the review doc).
+- In its place there is one small change: `HOST` (default `127.0.0.1`) in `config.ts`, and `app.listen(PORT, HOST)`. Only this computer can reach the API now; before, it listened on every network interface.
+- ADR-017 records the decision and when to revisit it.
+
+**Concepts (simple words)**
+- Listening address: `127.0.0.1` = "only calls from this computer". `0.0.0.0` = "calls from any network", which is what a Docker container needs inside.
+- Matching the effort to the project: a login protects against other people. With one user on one machine, limiting *where* the API can be reached gives most of the benefit for one line of code.
+
+**Verification**
+- Backend 247 tests, typecheck and lint clean. Frontend 35 tests, build OK.
+- Live check: `ss -ltn` shows the API on `127.0.0.1:3999` only, and `/endpoints` answers 200 with no token.
+- The temporary `ADMIN_TOKEN` was removed from the local `.env`.
+
+**Wrap-up**
+- The developer chose to stop here: all 8 modules are built or honestly evaluated, with 332 tests and CI.
+- Docker for the app, the worker heartbeat and demo data are listed as future work in the blueprint.
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

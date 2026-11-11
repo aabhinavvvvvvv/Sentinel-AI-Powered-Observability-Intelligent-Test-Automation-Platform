@@ -9,9 +9,11 @@
  *   GET    /endpoints/:id/checks  check history, newest first      → 200 | 400 | 404
  *   GET    /endpoints/:id/stats   uptime + P50/P95/P99 over a window → 200 | 400 | 404
  *   GET    /endpoints/:id/timeseries  the same per hour/6h/day, for charts → 200 | 400 | 404
+ *   GET    /endpoints/:id/anomalies   unusual hours found by the analytics service → 200 | 400 | 404
  */
 import { Router } from "express";
 import { z } from "zod";
+import { listAnomalies } from "../analytics/anomalies.js";
 import { getEndpointStats, getEndpointTimeseries, WindowSchema } from "../analytics/stats.js";
 import { checkEndpoint } from "../checks/check-endpoint.js";
 import { listCheckResults, saveCheckResult } from "../checks/repository.js";
@@ -97,6 +99,16 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     if (!window.success) return sendValidationError(res, window.error);
     if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, "Endpoint", id);
     res.json(await getEndpointTimeseries(db, id, window.data));
+  });
+
+  // Unusual behaviour found by the analytics service, newest first. ?limit=N (1–500, default 50)
+  router.get("/:id/anomalies", async (req, res) => {
+    const id = parseId(req.params.id);
+    if (id === null) return sendInvalidId(res);
+    const limit = LimitSchema.safeParse(req.query.limit);
+    if (!limit.success) return sendValidationError(res, limit.error);
+    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, "Endpoint", id);
+    res.json(await listAnomalies(db, id, limit.data));
   });
 
   router.delete("/:id", async (req, res) => {

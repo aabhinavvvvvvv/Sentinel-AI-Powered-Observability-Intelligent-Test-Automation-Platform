@@ -7,7 +7,8 @@ Sentinel monitors APIs and services, detects abnormal behaviour, helps engineers
 > **Status: early development (Phase 3: automated API testing).**
 > Register endpoints and Sentinel checks them automatically on their interval (Redis + BullMQ worker), with retries and SSRF protection. Every result is saved. After N failures in a row an incident is opened, and it is resolved on recovery. An email goes out for each (with retries if the mail server is down). A web dashboard shows every website's status and open incidents, lets you add, pause, and delete websites, and has a detail page per website (settings, uptime and P50/P95/P99 over 24h/7d/30d, a response-time chart, recent checks, incident history, "check now").
 > API testing: suites of request + assertion test cases, run on demand or on a schedule, with per-case results and failure reasons (dashboard: **API tests** tab).
-> Not yet: anomaly detection/ML, failure classification, test prioritization (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
+> Anomaly detection (statistical baseline): a Python service flags unusually slow hours; shown on each website's page.
+> Not yet: ML models, failure classification, test prioritization (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
 
 ## Repository layout
 
@@ -61,6 +62,14 @@ npm run dev
 
 The dashboard calls `/api/...`. Vite's dev server forwards those requests to the backend on port 3000, so the API must be running.
 
+```bash
+# 8. In a fourth terminal, run the Python analytics service (see "Analytics service" below for setup).
+cd analytics
+.venv/bin/uvicorn app.main:app --env-file ../.env --reload --port 8000
+```
+
+The worker asks it once an hour for unusual behaviour. If it isn't running, the worker logs an error and tries again next hour.
+
 **Alert emails (local):** emails go to **Mailpit**, a fake inbox. Open http://localhost:8025 to read them. Nothing is really sent. Recipients come from `ALERT_EMAIL_TO` in `.env` (comma-separated; leave empty to turn alerts off). For real email, point `SMTP_URL` at a real SMTP provider (e.g. `smtps://user:password@smtp.example.com:465`). Keep that in `.env`, never in Git.
 
 In another terminal:
@@ -107,10 +116,14 @@ python3 -m venv .venv                      # private folder for this project's l
 
 | Command | What it does |
 |---|---|
-| `.venv/bin/uvicorn app.main:app --reload --port 8000` | Run the service on http://localhost:8000 (auto-reload). Interactive API docs at `/docs` |
-| `.venv/bin/pytest` | Run the Python tests |
+| `.venv/bin/uvicorn app.main:app --env-file ../.env --reload --port 8000` | Run the service on http://localhost:8000 (auto-reload). Interactive API docs at `/docs` |
+| `.venv/bin/pytest` | Run the Python tests (uses the `sentinel_test` database: run `npm test` in `backend/` once first so it exists) |
 
-Current endpoints: `GET /health` → `{"status":"ok","service":"sentinel-analytics"}`. Anomaly analysis comes in the next steps.
+Endpoints:
+- `GET /health` → `{"status":"ok","service":"sentinel-analytics"}`
+- `POST /analyze/{endpoint_id}` → `{endpoint_id, method, hours_scored, findings: [{time, metric, value, baseline, score, severity, explanation}]}` (404 if the endpoint doesn't exist)
+
+**How anomalies are found** (`method: robust_z_v1`): for each **finished** hour in the last 48 hours, P50 response time of successful checks is compared with the median of the previous up-to-24 hours. Robust z = 0.6745 × (value − median) / MAD (MAD floored at 1 ms). Flagged if z > 3.5 (slower only). `critical` if z ≥ 10, else `warning`. Hours with fewer than 12 hours of history before them aren't judged. This is a **statistical signal, not a diagnosis**, and it has only been tested on made-up data so far. The service connects to Postgres **read-only**; the Node worker saves findings in the `anomalies` table.
 
 Known: pytest shows one `StarletteDeprecationWarning` suggesting `httpx2` instead of `httpx` for the test client. It's harmless today. Switching packages is left for a deliberate, verified change.
 
@@ -131,6 +144,7 @@ All configuration comes from environment variables, validated at startup by `bac
 | POST | `/endpoints/:id/check` | `200` saved check result (even if the site is down) | `400`, `404` |
 | GET | `/endpoints/:id/checks?limit=50` | `200` check history, newest first (limit 1–500) | `400`, `404` |
 | GET | `/endpoints/:id/stats?window=24h\|7d\|30d` | `200` uptime %, P50/P95/P99, failures by type (see definitions below) | `400`, `404` |
+| GET | `/endpoints/:id/anomalies?limit=50` | `200` unusual hours found by the analytics service, newest first | `400`, `404` |
 | GET | `/endpoints/:id/timeseries?window=24h\|7d\|30d` | `200` per-bucket checks, uptime %, P50/P95, oldest first (1 h / 6 h / 1 day buckets) | `400`, `404` |
 | POST / GET | `/suites` (`?endpoint_id=N`) | create `{endpoint_id, name, schedule_minutes?}` (201) / list with `case_count`, `last_run` | `400` |
 | GET / PATCH / DELETE | `/suites/:id` | one suite + its `cases` / change `{name?, schedule_minutes?}` / delete (204) | `400`, `404` |

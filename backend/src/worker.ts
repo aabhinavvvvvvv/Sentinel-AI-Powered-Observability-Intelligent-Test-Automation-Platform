@@ -1,15 +1,17 @@
 /**
  * The worker: a separate program from the API (`npm run dev:worker`).
- * It runs three kinds of jobs from Redis:
+ * It runs four kinds of jobs from Redis:
  *   "checks" queue    → check an endpoint, save the result, open/close incidents
  *   "alerts" queue    → send the email for an opened/resolved incident
  *   "test-runs" queue → run an API test suite and save each case's result
+ *   "analysis" queue  → hourly: ask the Python service for unusual behaviour, save anomalies
  *
  * Why separate from the API? Checks can be slow (up to 30s each). Running them
  * here means the API stays fast for users no matter how many checks are running.
  */
-import { Worker } from "bullmq";
+import { Queue, Worker } from "bullmq";
 import { ALERTS_QUEUE, createAlertQueue, type AlertJob } from "./alerts/alert-queue.js";
+import { analyzeAll } from "./analytics/anomalies.js";
 import { createMailer } from "./alerts/mailer.js";
 import { sendIncidentAlert } from "./alerts/send-incident-alert.js";
 import { runScheduledCheck } from "./checks/run-scheduled-check.js";
@@ -32,6 +34,8 @@ const db = createDatabase(config.DATABASE_URL, logger);
 const scheduler = createScheduler(config.REDIS_URL);
 const alertQueue = createAlertQueue(config.REDIS_URL);
 const testRunQueue = createTestRunQueue(config.REDIS_URL);
+const ANALYSIS_QUEUE = "analysis";
+const analysisQueue = new Queue(ANALYSIS_QUEUE, { connection: { url: config.REDIS_URL }, prefix: DEFAULT_PREFIX });
 const mailer = createMailer(config.SMTP_URL, config.ALERT_EMAIL_FROM);
 const alertsEnabled = config.ALERT_EMAIL_TO.length > 0;
 const connection = { url: config.REDIS_URL };
@@ -91,6 +95,25 @@ const testRunWorker = new Worker<TestRunJob>(
 testRunWorker.on("failed", (job, err) => logger.error({ err, job: job?.data }, "test run job failed"));
 testRunWorker.on("error", (err) => logger.error({ err }, "test run worker error"));
 
+// 5. Analysis: once an hour, ask the Python analytics service about every active endpoint.
+//    One repeating timer ("analyze-all"); like all `every` timers, its first run is right away.
+await analysisQueue.upsertJobScheduler(
+  "analyze-all",
+  { every: 60 * 60 * 1000 },
+  { name: "analyze-all", opts: { attempts: 1, removeOnComplete: true, removeOnFail: 100 } },
+);
+const analysisWorker = new Worker(
+  ANALYSIS_QUEUE,
+  async () => {
+    const summary = await analyzeAll(db, config.ANALYTICS_URL);
+    // If the Python service is down, every endpoint lands in `errors`: logged loudly, retried next hour.
+    logger[summary.errors.length > 0 ? "warn" : "info"](summary, "analysis done");
+  },
+  { connection, prefix: DEFAULT_PREFIX, concurrency: 1 },
+);
+analysisWorker.on("failed", (_job, err) => logger.error({ err }, "analysis job failed"));
+analysisWorker.on("error", (err) => logger.error({ err }, "analysis worker error"));
+
 // A check job "fails" only if OUR code breaks (e.g. the database is down), not when a website is down.
 // We don't retry it: the next timer tick checks the endpoint again anyway.
 checkWorker.on("failed", (job, err) => logger.error({ err, endpointId: job?.data.endpointId }, "check job failed"));
@@ -106,11 +129,12 @@ logger.info(
   "worker started",
 );
 
-// 5. Graceful shutdown: let running jobs finish, then close connections.
+// 6. Graceful shutdown: let running jobs finish, then close connections.
 async function shutdown(signal: string) {
   logger.info({ signal }, "worker shutting down");
-  await Promise.all([checkWorker.close(), alertWorker.close(), testRunWorker.close()]); // waits for in-progress jobs
-  await Promise.all([scheduler.close(), alertQueue.close(), testRunQueue.close()]);
+  // waits for in-progress jobs
+  await Promise.all([checkWorker.close(), alertWorker.close(), testRunWorker.close(), analysisWorker.close()]);
+  await Promise.all([scheduler.close(), alertQueue.close(), testRunQueue.close(), analysisQueue.close()]);
   mailer.close();
   await db.close();
   process.exit(0);

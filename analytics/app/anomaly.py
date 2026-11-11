@@ -11,6 +11,7 @@ A score above 3.5 is flagged. This is a STATISTICAL SIGNAL, not a cause.
 import numpy as np
 import pandas as pd
 
+METHOD = "robust_z_v1"  # name of this detector, saved with each finding (so ML results can be compared later)
 THRESHOLD = 3.5  # robust z above this = unusual (a common rule of thumb in statistics)
 WINDOW = 24  # compare each hour with the previous 24 hours
 MIN_HISTORY = 12  # need at least 12 previous hours, otherwise we don't judge

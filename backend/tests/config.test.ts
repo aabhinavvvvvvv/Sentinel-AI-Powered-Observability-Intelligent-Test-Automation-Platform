@@ -15,6 +15,7 @@ describe("loadConfig", () => {
       SMTP_URL: "smtp://localhost:1025",
       ALERT_EMAIL_FROM: "Sentinel <sentinel@localhost>",
       ALERT_EMAIL_TO: [], // alerts off by default
+      ANALYTICS_URL: "http://localhost:8000",
       HEALTHCHECK_DB_TIMEOUT_MS: 2000,
     });
   });

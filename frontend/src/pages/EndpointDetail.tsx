@@ -17,12 +17,13 @@ export function EndpointDetail() {
   // Load all three things at once. useCallback keeps the same function until `id` changes,
   // so usePolling doesn't restart its timer on every redraw.
   const load = useCallback(async () => {
-    const [endpoint, checks, incidents] = await Promise.all([
+    const [endpoint, checks, incidents, anomalies] = await Promise.all([
       api.getEndpoint(id),
       api.listChecks(id, CHECKS_SHOWN),
       api.listIncidentsFor(id),
+      api.listAnomalies(id),
     ]);
-    return { endpoint, checks, incidents };
+    return { endpoint, checks, incidents, anomalies };
   }, [id]);
   const { data, error, refresh } = usePolling(load);
   const [busy, setBusy] = useState(false);
@@ -58,7 +59,7 @@ export function EndpointDetail() {
     );
   }
 
-  const { endpoint, checks, incidents } = data;
+  const { endpoint, checks, incidents, anomalies } = data;
   const status = endpointStatus({
     ...endpoint,
     last_check: checks[0] ?? null,
@@ -101,6 +102,35 @@ export function EndpointDetail() {
       </section>
 
       <StatsPanel endpointId={id} />
+
+      <section>
+        <h2>Unusual behaviour</h2>
+        <p className="muted small">
+          Hours that were much slower than this website's normal (compared with the previous 24 hours). These are
+          statistical signals, not diagnoses: they say <em>what</em> looked unusual, not <em>why</em>. Needs at least
+          12 hours of history. Checked once an hour.
+        </p>
+        {anomalies.length === 0 ? (
+          <p className="muted">Nothing unusual found.</p>
+        ) : (
+          <ul className="results">
+            {anomalies.map((a) => (
+              <li key={a.id}>
+                <div>
+                  <span className={`badge ${a.severity === "critical" ? "down" : "failing"}`}>
+                    {a.severity.toUpperCase()}
+                  </span>{" "}
+                  <strong>{localTime(a.bucket_start)}</strong>{" "}
+                  <span className="muted small">
+                    {a.metric}: {Math.round(a.value)} ms vs normal {Math.round(a.baseline)} ms · score {a.score}
+                  </span>
+                </div>
+                <div className="small">{a.explanation}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section>
         <h2>Recent checks</h2>

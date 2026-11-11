@@ -73,6 +73,20 @@ export interface TimeseriesPoint {
   p95_ms: number | null;
 }
 
+/** Unusual behaviour found by the analytics service: a statistical signal, not a diagnosis. */
+export interface Anomaly {
+  id: number;
+  endpoint_id: number;
+  metric: string;
+  bucket_start: string; // the unusual hour (UTC)
+  value: number;
+  baseline: number;
+  score: number;
+  severity: "warning" | "critical";
+  explanation: string;
+  method: string;
+}
+
 // ----- API testing -----
 
 export type RunStatus = "queued" | "running" | "passed" | "failed" | "error";
@@ -172,6 +186,7 @@ export const api = {
   listChecks: (id: number, limit = 50) => request<CheckResult[]>(`/endpoints/${id}/checks?limit=${limit}`),
   listIncidentsFor: (id: number) => request<Incident[]>(`/incidents?endpoint_id=${id}`),
   checkNow: (id: number) => request<CheckResult>(`/endpoints/${id}/check`, { method: "POST" }),
+  listAnomalies: (id: number) => request<Anomaly[]>(`/endpoints/${id}/anomalies?limit=20`),
 
   // Analytics
   getStats: (id: number, range: StatsRange) => request<EndpointStats>(`/endpoints/${id}/stats?window=${range}`),

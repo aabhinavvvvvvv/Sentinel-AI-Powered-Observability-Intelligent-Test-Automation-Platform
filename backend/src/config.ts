@@ -39,6 +39,8 @@ const EnvSchema = z.object({
         .filter((address) => address !== ""),
     )
     .pipe(z.array(z.email({ error: "must be a comma-separated list of email addresses" }))),
+  // The Python analytics service (analytics/).
+  ANALYTICS_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:8000"),
   HEALTHCHECK_DB_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(2000),
 });
 

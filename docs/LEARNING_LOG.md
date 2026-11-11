@@ -506,6 +506,31 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 18 — 2026-11-11 — Phase 4 step 3: connecting Python and Node
+
+**What we built**
+- Python: read-only DB access + `POST /analyze/{id}`. Node: `anomalies` table, hourly `analyze-all` job, contract check, `GET /endpoints/:id/anomalies`. Dashboard: "Unusual behaviour" section.
+
+**Concepts (simple words)**
+- One writer: Python only reads (the database itself refuses writes), Node saves.
+- Contract: Node checks the exact shape of Python's answer before trusting it.
+- Idempotent saving: the same finding twice is stored once (UNIQUE + ON CONFLICT DO NOTHING).
+- Failure isolation: one bad endpoint or a stopped service doesn't stop the rest.
+- Batch, not per-check: ML/statistics run hourly over saved data.
+- pytest fixtures (setup code a test asks for by name), `conftest.py`, `pytest.approx`.
+
+**Debugging story**
+- The hourly job "didn't run" in my test. Redis showed the timer had already fired once (`ic 2`). The developer's own dev worker, reloaded by my edit, had created it and run it while the Python service was off. Lesson: check *who else* is consuming the queue before assuming a bug (same lesson as the shared test-run job yesterday).
+
+**Verification**
+- Python: 18 passed. Backend: 224/224, typecheck, lint, build OK. Frontend: 31/31, build OK.
+- Real data: the Python service answered for all 8 active endpoints with `hours_scored = 0` (only 3–5 hours of history; 12 needed), so 0 anomalies. Correct behaviour, but the detector is not yet evaluated on real data.
+
+**Next step**
+- Let data accumulate (keep the worker + Python running). Then commit Phase 4, and decide Phase 5 (ML detector compared against this baseline, and/or predictive experiments) once there's enough history.
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

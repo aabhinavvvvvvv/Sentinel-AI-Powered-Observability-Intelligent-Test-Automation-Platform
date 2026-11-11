@@ -214,7 +214,7 @@ These are proposed choices. Review the existing repository and explain any chang
 - Scheduling and tests.
 
 ### Phase 4 — Python analytics foundation
-> **Status (2026-11-11):** step 1 ✅ Python project skeleton (venv, FastAPI `/health`, pytest). Step 2 ✅ anomaly logic with Pandas (hourly P50 + robust z-score vs previous 24 h), tested on made-up data. Next: step 3, connect to Postgres + Node + dashboard.
+> **Status (2026-11-11):** step 1 ✅ Python project skeleton (venv, FastAPI `/health`, pytest). Step 2 ✅ anomaly logic with Pandas (hourly P50 + robust z-score vs previous 24 h), tested on made-up data. Step 3 ✅ connected: read-only Postgres access, `POST /analyze/{id}`, hourly Node job, `anomalies` table, dashboard section (ADR-013). Not yet evaluated on real data (too little history).
 
 - Python project structure and FastAPI basics.
 - Data retrieval/contract with Node backend.

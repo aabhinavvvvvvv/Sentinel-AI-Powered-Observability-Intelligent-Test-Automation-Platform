@@ -379,9 +379,31 @@ During development the worker process died (most likely while reloading a half-e
 - `to_findings(scored)`: flagged rows → dicts with time, value, baseline, score, severity (`critical` if z ≥ 10, else `warning`; a rule of thumb), and an explanation labelled "a statistical signal, not a diagnosis".
 - Tested only on **made-up data** with known answers (11 pytest tests). Includes a demonstration that two earlier spikes hide a new spike from the classic mean/std z-score (≈3.3) but not from the robust score. Not yet evaluated on real data (too little history).
 
-### Planned (step 3)
+### Step 3: connected
 
-- Not yet connected to anything. Planned contract (step 3): the Node worker periodically calls the service; the service reads `check_results` with a read-only DB role and returns anomaly findings as JSON; Node validates and stores them. Node keeps owning the schema and all writes.
+```mermaid
+sequenceDiagram
+    participant W as Node worker (hourly "analyze-all")
+    participant P as Python service :8000
+    participant DB as PostgreSQL
+    loop each active endpoint
+        W->>P: POST /analyze/{id}
+        P->>DB: SELECT checks of last 48 finished hours (read-only connection)
+        P->>P: hourly_p50 → find_anomalies → to_findings
+        P-->>W: {endpoint_id, method, hours_scored, findings[]}
+        W->>W: Zod-check the contract (reject a malformed answer)
+        W->>DB: INSERT anomalies ... ON CONFLICT DO NOTHING
+    end
+```
+
+- **One writer:** Python opens Postgres with `default_transaction_read_only=on`, so any write is refused by the database (tested). Node owns the schema and all writes.
+- **Contract:** `AnalysisSchema` in `backend/src/analytics/anomalies.ts` mirrors the Python response. A broken answer is an error for that endpoint; nothing is saved.
+- **Idempotent saving:** `UNIQUE (endpoint_id, metric, bucket_start, method)`. The 48 h lookback re-reports the same hours every run, and duplicates are skipped.
+- **Failure isolation:** one endpoint failing (or Python down) is collected in `errors` and logged. The others continue, and the next hourly run retries.
+- **Schedule:** a BullMQ job scheduler `analyze-all` on queue `analysis`, every hour (the first run is right away when the timer is created). Python is called **in batches**, never per check.
+- `method` (`robust_z_v1`) is stored so a future ML detector's results can be compared side by side.
+- Dashboard: "Unusual behaviour" section on the website page (value vs normal, score, severity, explanation, "signal, not diagnosis").
+- Real data so far: each endpoint has only 3–5 hours of checks, so `hours_scored = 0` (the 12-hour minimum) and no anomalies yet. The detector is **not evaluated on real data**.
 
 ## 12. Local infrastructure
 

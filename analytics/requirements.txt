@@ -6,6 +6,8 @@ fastapi==0.162.4   # web framework (like Express)
 uvicorn==0.54.0    # runs the web app (like `node server.js`)
 pandas==3.1.1      # tables of data: grouping by hour, medians, sliding windows
 numpy==2.5.4       # fast number arrays (pandas is built on it; we use it directly too)
+psycopg[binary]==3.3.8  # PostgreSQL driver (read-only use)
+python-dotenv==1.2.4    # reads the project's .env file (tests, and `uvicorn --env-file`)
 
 # For tests only
 pytest==9.2.0      # test runner (like Vitest)

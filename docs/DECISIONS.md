@@ -202,3 +202,31 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 **Trade-offs.** Less flexible than code: no loops, variables, or chained requests (e.g. login then use the token). The assertion menu is small (no JSON Schema yet). Headers are stored unencrypted.
 
 **Revisit if.** Users need multi-step flows (add variables/chaining as data) or schema validation (add a `json_schema` assertion with a validator library).
+
+---
+
+## ADR-013 — Anomaly detection: robust z-score in a read-only Python service, called hourly by Node
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** Phase 4 needs a transparent statistical baseline for unusual behaviour, before any ML.
+
+**Decision.**
+- **Method:** hourly P50 of successful checks vs the median of the previous ≤ 24 hours, robust z-score (MAD), threshold 3.5, slower only, at least 12 hours of history.
+- **Where:** a separate Python/FastAPI service that reads Postgres with a read-only connection and returns findings as JSON.
+- **Who saves:** the Node worker calls it hourly for each active endpoint, validates the response (Zod), and saves with `ON CONFLICT DO NOTHING`.
+
+**Why.**
+- Median/MAD aren't dragged by earlier spikes (demonstrated in a test), and every number is explainable.
+- Python for pandas now and scikit-learn later.
+- Read-only access keeps a single writer and owner of the schema.
+- Hourly batches instead of per-check calls, as the architecture rules require.
+
+**Trade-offs.**
+- Only one metric so far (P50 latency); error rate and availability aren't covered.
+- Fixed thresholds are rules of thumb, not tuned.
+- Python reads the tables directly, so it depends on Node's schema (the contract covers the response, not the query).
+- A 4th process to run locally.
+- Not evaluated on real data yet.
+
+**Revisit if.** False positives or missed slowdowns show up in real data (tune, or add an ML detector and compare via `method`), or more metrics are needed.

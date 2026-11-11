@@ -78,6 +78,23 @@ describe("EndpointDetail", () => {
         },
       ],
       "/api/endpoints/23/timeseries": [200, { window: "24h", bucket: "1 hour", points: [] }],
+      "/api/endpoints/23/anomalies": [
+        200,
+        [
+          {
+            id: 1,
+            endpoint_id: 23,
+            metric: "P50 response time",
+            bucket_start: "2026-11-10T20:00:00Z",
+            value: 900,
+            baseline: 240,
+            score: 445.2,
+            severity: "critical",
+            explanation: "P50 response time was 900 ms ... This is a statistical signal, not a diagnosis.",
+            method: "robust_z_v1",
+          },
+        ],
+      ],
       "/api/endpoints/23/checks": [200, [check(3, true, 300), check(2, true, 100), check(1, false, 50)]],
       "/api/endpoints/23": [200, endpoint],
       "/api/incidents": [
@@ -104,6 +121,9 @@ describe("EndpointDetail", () => {
     expect(screen.getAllByText("OK")).toHaveLength(2);
     expect(screen.getAllByText("FAIL")).toHaveLength(1);
     expect(screen.getByText("2m 30s")).toBeTruthy(); // incident duration
+    // Anomaly: measured value vs normal, and labelled as a signal, not a diagnosis.
+    expect(screen.getByText(/900 ms vs normal 240 ms/)).toBeTruthy();
+    expect(screen.getByText(/statistical signal, not a diagnosis/)).toBeTruthy();
   });
 
   it("shows the API's message when the website doesn't exist", async () => {

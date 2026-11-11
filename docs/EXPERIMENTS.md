@@ -91,3 +91,47 @@ Development-seed results were almost identical (same hour tuned 0.86, IF v2 tune
 - **The key ingredient for both is the same knowledge**: compare with the same time of day. Most of the gain came from understanding the data, not from the algorithm.
 - **Limits:** still synthetic data from one generator, one metric, four planted problem types. Real traffic may behave differently. That's why the next step is a side-by-side comparison on real data, not a promotion.
 - **Observed quirk (found while building shadow mode):** Isolation Forest v2 can raise a false alarm on the **normal hour right after a spike**. Its `vs_previous_hour` feature sees a sudden *drop* (e.g. 0.33×) and finds that unusual. The "slower only" filter doesn't stop it, because that hour is a hair above its same-hour median (1.004×). This is an "echo" effect of a backward-looking feature. Not fixed (fixing it would require re-running the protocol); to be measured in shadow mode.
+
+---
+
+## Experiment 3 — Predicting a slow hour, one hour ahead
+
+**Question:** can a supervised model warn that the **next** hour will be slow (≥ 30% slower than usual for that time of day)?
+
+**Data (SYNTHETIC, `make_slowdown_dataset`):** 30 days, one slowdown per 2-day block at a random hour.
+- **creeping** (like a memory leak): +0% → +80% over 12 h. The first 5 hours are **warning signs** (+0…+29%).
+- **sudden** (like a bad deploy): +50% for 6 h, with no warning.
+- The warning signs were **built in on purpose**. A good result therefore shows only that a method *can* use warning signs when they exist, not that real websites give them.
+
+**Answer key split by difficulty:** "still slow" (already slow now), "creeping starts" and "sudden starts" (not slow yet, slow next hour: needs a real early warning).
+
+**Methods:**
+- Persistence: "next hour = this hour" (slow now if ≥ 1.3 × usual).
+- Early-warning rule: the same with a lower bar (≥ 1.2 × usual).
+- Random Forest (100 trees). Features: `vs_usual`, `rise_1h`, `rise_3h` (all backward-looking). Trained only on hours whose answer lies in days 1–20.
+
+**Protocol:** same as Experiment 2. Equal tuning budget, 4 values of one setting each, on development seeds 1, 2, 3, 42, 99:
+- rule cut 1.15 / **1.2** / 1.25 / 1.3 (1.2 and 1.25 tied at F1 0.87; picked 1.2 for more early warnings)
+- forest probability cut-off 0.3 / **0.4** / 0.5 / 0.6
+
+Then **one** run on held-out seeds 100–109. Reproduce with `cd analytics && .venv/bin/python -m ml.prediction`.
+
+### Held-out results (10 datasets)
+
+| Method | F1 | Precision | Recall | Creeping starts warned | Sudden starts | Still slow |
+|---|---|---|---|---|---|---|
+| Persistence (+30%) | 0.85 | 0.84 | 0.85 | 8/20 | 0/30 | 265/270 |
+| **Early-warning rule (+20%, tuned)** | **0.86** | 0.82 | **0.90** | **18/20** | 0/30 | **270/270** |
+| Random Forest (0.5, untuned) | 0.86 | **0.87** | 0.85 | 15/20 | 0/30 | 258/270 |
+| Random Forest (0.4, tuned) | 0.86 | 0.84 | 0.88 | 16/20 | 0/30 | 266/270 |
+
+Development results were nearly identical (F1 0.85–0.87), so there was no sign of overfitting.
+
+### What we learned
+
+- **The Random Forest did not beat a one-line rule.** The only warning sign in this data is "it's already getting slower", and a lower threshold captures that directly.
+- **F1 hides the interesting part.** All methods score ≈ 0.86 because most "yes" hours are *still slow* hours, which are easy. The real difference is early warnings: 18/20 vs 16/20 vs 8/20.
+- **Nothing predicts sudden problems** (0/30 for every method). This is expected and is a useful sanity check: catching them would have pointed to leakage.
+- **Persistence's "early warnings" are partly luck:** a +29% hour is sometimes *measured* above +30% because of random wobble.
+- **Leakage guard tested:** flipping every answer from the last training hour onward leaves the forest's predictions unchanged. With a deliberate bug (training on 3 test days), that test fails.
+- **Decision:** no prediction model ships. ML would be worth revisiting with richer signals (error rate, traffic, deploy events) or real incidents with warning patterns (ADR-015).

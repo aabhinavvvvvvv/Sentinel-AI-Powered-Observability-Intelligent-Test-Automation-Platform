@@ -246,3 +246,19 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 **Trade-offs.** More findings on the page, possibly noisy. 14 days of data loaded per endpoint per hour. Real-data evaluation still lacks an answer key (it will need manual review of findings).
 
 **Revisit if.** After enough real history, review shadow findings against incidents and known events, then promote, tune, or drop each detector.
+
+---
+
+## ADR-015 — Don't ship a prediction model (yet)
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** Experiment 3 asked "will the next hour be slow?" on synthetic data. On 10 held-out datasets, a Random Forest (F1 0.86, 16/20 early warnings) tied with a simple rule, "warn when ≥ 20% above usual for this hour" (F1 0.86, 18/20). No method can predict sudden problems (0/30).
+
+**Decision.** Don't add a prediction feature to the live service. Keep the experiment code and results.
+
+**Why.** A model that doesn't beat a one-line rule adds complexity without benefit. The data has one warning signal (latency already rising), and a threshold captures it. Showing a "prediction" on the dashboard would overstate what we can do.
+
+**Trade-offs.** The project has no live predictive feature. The early-warning rule is effectively a lower anomaly threshold, which the same-hour detector in shadow mode already approximates.
+
+**Revisit if.** We have more signals per hour (error rate, request volume, deploy times) or real incidents that show warning patterns a single threshold misses.

@@ -299,7 +299,91 @@ One SQL query: `generate_series` makes every bucket start in the window, `date_b
 
 - Computed on request (no pre-aggregated tables). At about 1,440 rows/day/endpoint a 30-day window is about 43k rows per endpoint, which is fine for now. Revisit with roll-up tables if it becomes slow.
 
-## 10. Local infrastructure
+## 10. API testing (Phase 3)
+
+### Step 1: suites and test cases (`src/testing/`)
+
+```mermaid
+erDiagram
+    endpoints ||--o{ test_suites : "has"
+    test_suites ||--o{ test_cases : "has"
+```
+
+- `test_suites(endpoint_id → endpoints, name)`: a suite belongs to one monitored endpoint, so later (Phase 7) test risk can use that endpoint's health.
+- `test_cases(suite_id → test_suites, name, method, url, headers JSONB, body, timeout_ms, assertions JSONB)`. Both FKs use `ON DELETE CASCADE`.
+- **No user code.** Assertions are a fixed menu, validated with a Zod `discriminatedUnion` on `type`: `status_equals`, `response_time_below_ms`, `header_contains`, `body_contains`, `json_path_exists`, `json_path_equals` (simple values only).
+- **PATCH merges, then validates the whole case** with the create schema. That gives one set of rules, and cross-field rules (no body on GET/HEAD) still hold when only one field changes.
+- JSONB parameters are `JSON.stringify`'d. The pg driver would otherwise send JS arrays as Postgres arrays (proved by a mutation check: 8 tests fail without it).
+- Shared HTTP helpers (`parseId`, `sendValidationError`, `sendInvalidId`, `sendNotFound`) moved to `src/http.ts`.
+- Known limitation: headers (e.g. auth tokens) are stored unencrypted.
+
+### Step 2: running suites
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API
+    participant DB as PostgreSQL
+    participant Q as Redis (test-runs queue)
+    participant W as Worker
+    participant T as API under test
+    U->>API: POST /suites/1/runs
+    API->>DB: INSERT test_runs (status queued)
+    API->>Q: add job {runId} (jobId run-<id>)
+    API-->>U: 202 Accepted + run
+    Q->>W: job
+    W->>DB: UPDATE status queued→running (only one worker can win)
+    loop each case, one at a time
+        W->>T: request (http-client: SSRF guard, timeout, body ≤ 1 MB)
+        W->>W: evaluateAssertions → failures with reasons
+        W->>DB: INSERT test_case_results
+    end
+    W->>DB: UPDATE status passed | failed (+ counts)
+```
+
+- `src/checks/http-client.ts` (`sendRequest`) is the one safe request function, shared by health checks and API tests. `check-endpoint.ts` became a thin wrapper.
+- `src/testing/assertions.ts` is a pure evaluator. JSON is parsed at most once; a dot path walks objects and arrays.
+- **Idempotent start:** `UPDATE ... WHERE status = 'queued'` lets exactly one worker claim a run, so a duplicate job does nothing.
+- If our code breaks mid-run, the run is marked `error` with the message (it doesn't stay `running`). A worker *crash* mid-run can still leave it `running` (known limitation).
+- Jobs have `attempts: 1`: no automatic re-runs, because tests may have side effects (POST/DELETE).
+- `test_case_results.case_id` uses `ON DELETE SET NULL` and keeps a copy of `case_name`, so history survives deleting a case.
+- Worker concurrency for test runs: 2 suites at a time; cases within a suite run sequentially.
+
+### Step 3: schedules + dashboard
+
+- `test_suites.schedule_minutes` (5–1440 or NULL). The `test-runs` queue holds one BullMQ job scheduler per scheduled suite (`suite-<id>`), which emits `{ suiteId }` jobs. "Run now" jobs carry `{ runId }`. The worker handles both: `createScheduledRun` (skips deleted/empty suites) then `runSuite`.
+- The API calls `schedule`/`unschedule` on create/PATCH/delete. The worker's startup `syncAll` rebuilds suite timers from Postgres (same pattern as endpoint timers).
+- Suite PATCH = merge into the stored suite, then validate (`SuiteSettingsSchema`).
+- Frontend: top nav (Websites / API tests). `/suites` lists suites with their last run and has a create form. `/suites/:id` has Run now, a schedule picker, run history, cases, and "add case" as pasted JSON (validated by the backend). `/suites/:id/runs/:runId` shows per-case PASS/FAIL with reasons. Pages poll every 3 s while runs progress.
+
+### Known gap: nobody watches the worker
+
+During development the worker process died (most likely while reloading a half-edited file). The API kept answering 200 on `/healthz`, but **no checks or runs happened for ~8 minutes and nothing reported it**: jobs simply waited in Redis. Mitigations for later: a process manager / Docker `restart: always` (Phase 8), and a worker heartbeat (e.g. "last check saved" age) exposed in `/healthz` and the dashboard.
+
+## 11. Analytics service (Phase 4)
+
+### Step 1: skeleton
+
+- `analytics/`: Python 3.12, its own virtual environment (`.venv/`, git-ignored), dependencies pinned in `requirements.txt` (fastapi, uvicorn, pytest, httpx).
+- `app/main.py`: FastAPI app with `GET /health`. FastAPI also serves auto-generated API docs at `/docs`.
+- `tests/test_health.py`: pytest + FastAPI `TestClient` (in-memory requests, like Supertest).
+### Step 2: anomaly logic (`analytics/app/anomaly.py`, pure functions)
+
+- `hourly_p50(checks)`: raw checks → one value per hour = median response time of **successful** checks (`resample("1h").median()`). Hours without successful checks are NaN.
+- `find_anomalies(values)`: for each hour, compare with the **previous** hours only (`shift(1)` + `rolling(24, min_periods=12)`):
+  - baseline = rolling median
+  - MAD = rolling median absolute deviation, floored at 1 ms
+  - robust z = 0.6745 × (value − baseline) / MAD
+  - flag if z > 3.5 (slower only)
+  - NaN hours are dropped. With < 12 hours of history: no score, no flag.
+- `to_findings(scored)`: flagged rows → dicts with time, value, baseline, score, severity (`critical` if z ≥ 10, else `warning`; a rule of thumb), and an explanation labelled "a statistical signal, not a diagnosis".
+- Tested only on **made-up data** with known answers (11 pytest tests). Includes a demonstration that two earlier spikes hide a new spike from the classic mean/std z-score (≈3.3) but not from the robust score. Not yet evaluated on real data (too little history).
+
+### Planned (step 3)
+
+- Not yet connected to anything. Planned contract (step 3): the Node worker periodically calls the service; the service reads `check_results` with a read-only DB role and returns anomaly findings as JSON; Node validates and stores them. Node keeps owning the schema and all writes.
+
+## 12. Local infrastructure
 
 `docker-compose.yml` runs, all on `127.0.0.1` only:
 - `postgres:16-alpine`: named volume `pgdata`, `pg_isready` healthcheck.

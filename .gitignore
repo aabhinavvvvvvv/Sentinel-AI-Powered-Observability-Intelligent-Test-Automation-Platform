@@ -1,6 +1,11 @@
 # Dependencies (re-created by `npm install`; never commit them)
 node_modules/
 
+# Python: the virtual environment (re-created by `python3 -m venv .venv` + pip install) and caches
+.venv/
+__pycache__/
+.pytest_cache/
+
 # Build output (re-created by `npm run build`)
 dist/
 coverage/

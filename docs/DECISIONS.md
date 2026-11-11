@@ -184,3 +184,21 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 **Trade-offs.** Each request scans the window's rows. Buckets are aligned to UTC (daily buckets split at UTC midnight). Recharts adds ~400 kB to the bundle.
 
 **Revisit if.** Stats queries get slow (add hourly roll-up tables), or local-time daily buckets are needed.
+
+---
+
+## ADR-012 — API tests are declarative data, run by Sentinel (no Pytest, no user code)
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** Users need automated API tests. The project rules forbid executing user-submitted code on the main server.
+
+**Options.** (a) Users upload test scripts (e.g. Pytest/JS) and we run them in a sandbox. (b) Tests are JSON data: a request plus a fixed menu of assertions, evaluated by our own code.
+
+**Decision.** (b). Suites belong to an endpoint, and cases hold request + assertions as JSONB. Pytest stays for testing our own Python service later.
+
+**Why.** No code execution means no sandbox to build or secure. Every test is validatable, storable, and explainable ("expected 200, got 500"). The same SSRF guard applies to every request.
+
+**Trade-offs.** Less flexible than code: no loops, variables, or chained requests (e.g. login then use the token). The assertion menu is small (no JSON Schema yet). Headers are stored unencrypted.
+
+**Revisit if.** Users need multi-step flows (add variables/chaining as data) or schema validation (add a `json_schema` assertion with a validator library).

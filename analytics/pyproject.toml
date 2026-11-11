@@ -1,0 +1,5 @@
+# Settings for Python tools. For now only pytest's.
+[tool.pytest.ini_options]
+# Let tests write `from app.main import app` (look for the `app` package in this folder).
+pythonpath = ["."]
+testpaths = ["tests"]

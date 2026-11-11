@@ -1,0 +1,12 @@
+# Python libraries for the analytics service. Install with:
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# Exact versions (==) so everyone gets the same ones.
+
+fastapi==0.162.4   # web framework (like Express)
+uvicorn==0.54.0    # runs the web app (like `node server.js`)
+pandas==3.1.1      # tables of data: grouping by hour, medians, sliding windows
+numpy==2.5.4       # fast number arrays (pandas is built on it; we use it directly too)
+
+# For tests only
+pytest==9.2.0      # test runner (like Vitest)
+httpx==0.28.1      # needed by FastAPI's TestClient

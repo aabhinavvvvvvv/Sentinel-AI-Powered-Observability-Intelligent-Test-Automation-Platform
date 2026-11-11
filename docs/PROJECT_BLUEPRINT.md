@@ -205,6 +205,8 @@ These are proposed choices. Review the existing repository and explain any chang
 - Define aggregation windows and test calculations.
 
 ### Phase 3 — Automated API testing
+> **Status (2026-11-11):** ✅ suites + test cases (declarative, ADR-012), runner (queue + worker, per-case results with reasons), schedules, and dashboard pages. Not built: bounded concurrency/load tests (deferred), JSON-schema assertion, multi-step flows.
+
 - Suites and test cases.
 - Assertions and validation.
 - Execution history and reports.
@@ -212,6 +214,8 @@ These are proposed choices. Review the existing repository and explain any chang
 - Scheduling and tests.
 
 ### Phase 4 — Python analytics foundation
+> **Status (2026-11-11):** step 1 ✅ Python project skeleton (venv, FastAPI `/health`, pytest). Step 2 ✅ anomaly logic with Pandas (hourly P50 + robust z-score vs previous 24 h), tested on made-up data. Next: step 3, connect to Postgres + Node + dashboard.
+
 - Python project structure and FastAPI basics.
 - Data retrieval/contract with Node backend.
 - Pandas/NumPy feature preparation.

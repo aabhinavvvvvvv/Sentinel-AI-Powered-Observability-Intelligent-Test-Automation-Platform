@@ -4,9 +4,10 @@
 
 Sentinel monitors APIs and services, detects abnormal behaviour, helps engineers investigate failures, predicts degradation where historical data supports it, and prioritizes tests based on risk. Full scope: [docs/PROJECT_BLUEPRINT.md](docs/PROJECT_BLUEPRINT.md).
 
-> **Status: early development (Phase 2: historical analytics).**
+> **Status: early development (Phase 3: automated API testing).**
 > Register endpoints and Sentinel checks them automatically on their interval (Redis + BullMQ worker), with retries and SSRF protection. Every result is saved. After N failures in a row an incident is opened, and it is resolved on recovery. An email goes out for each (with retries if the mail server is down). A web dashboard shows every website's status and open incidents, lets you add, pause, and delete websites, and has a detail page per website (settings, uptime and P50/P95/P99 over 24h/7d/30d, a response-time chart, recent checks, incident history, "check now").
-> Not yet: API test suites, anomaly detection/ML (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
+> API testing: suites of request + assertion test cases, run on demand or on a schedule, with per-case results and failure reasons (dashboard: **API tests** tab).
+> Not yet: anomaly detection/ML, failure classification, test prioritization (see the roadmap in the blueprint). Analytics, testing, ML, and the dashboard come later (see the roadmap in the blueprint).
 
 ## Repository layout
 
@@ -17,6 +18,9 @@ sentinel/
 │   └── tests/          Vitest + Supertest tests
 ├── frontend/           React + TypeScript dashboard (Vite)
 │   └── src/            pages, components, API client, tests
+├── analytics/          Python + FastAPI analytics service (Phase 4, early)
+│   ├── app/            the service
+│   └── tests/          pytest tests
 ├── docs/               blueprint, architecture, decisions, learning log
 ├── docker-compose.yml  local dependencies (PostgreSQL, Redis, Mailpit)
 └── .env.example        configuration template (copy to .env)
@@ -91,6 +95,25 @@ If PostgreSQL is stopped (`docker compose stop postgres`), the same request retu
 | `npm run typecheck` | Type-check |
 | `npm run build` | Type-check and build static files into `dist/` |
 
+## Analytics service (Python, inside `analytics/`)
+
+Needs Python 3.12+. One-time setup:
+
+```bash
+cd analytics
+python3 -m venv .venv                      # private folder for this project's libraries
+.venv/bin/pip install -r requirements.txt  # install them
+```
+
+| Command | What it does |
+|---|---|
+| `.venv/bin/uvicorn app.main:app --reload --port 8000` | Run the service on http://localhost:8000 (auto-reload). Interactive API docs at `/docs` |
+| `.venv/bin/pytest` | Run the Python tests |
+
+Current endpoints: `GET /health` → `{"status":"ok","service":"sentinel-analytics"}`. Anomaly analysis comes in the next steps.
+
+Known: pytest shows one `StarletteDeprecationWarning` suggesting `httpx2` instead of `httpx` for the test client. It's harmless today. Switching packages is left for a deliberate, verified change.
+
 ## Configuration
 
 All configuration comes from environment variables, validated at startup by `backend/src/config.ts`. The app refuses to start with a clear message if anything is missing or invalid. See [.env.example](.env.example) for every variable. **Never commit `.env`.**
@@ -109,6 +132,13 @@ All configuration comes from environment variables, validated at startup by `bac
 | GET | `/endpoints/:id/checks?limit=50` | `200` check history, newest first (limit 1–500) | `400`, `404` |
 | GET | `/endpoints/:id/stats?window=24h\|7d\|30d` | `200` uptime %, P50/P95/P99, failures by type (see definitions below) | `400`, `404` |
 | GET | `/endpoints/:id/timeseries?window=24h\|7d\|30d` | `200` per-bucket checks, uptime %, P50/P95, oldest first (1 h / 6 h / 1 day buckets) | `400`, `404` |
+| POST / GET | `/suites` (`?endpoint_id=N`) | create `{endpoint_id, name, schedule_minutes?}` (201) / list with `case_count`, `last_run` | `400` |
+| GET / PATCH / DELETE | `/suites/:id` | one suite + its `cases` / change `{name?, schedule_minutes?}` / delete (204) | `400`, `404` |
+| POST | `/suites/:id/cases` | add a test case (201) | `400`, `404` |
+| PATCH / DELETE | `/suites/:id/cases/:caseId` | change some fields (full case re-validated) / delete (204) | `400`, `404` |
+| POST | `/suites/:id/runs` | `202` run queued; the worker runs the cases one at a time | `400` (no cases), `404` |
+| GET | `/suites/:id/runs?limit=50` | run history, newest first (`queued` → `running` → `passed`/`failed`/`error`) | `400`, `404` |
+| GET | `/suites/:id/runs/:runId` | one run + `results` per case (`passed`, status, time, `failures` with reasons) | `400`, `404` |
 | GET | `/incidents?status=open\|resolved&endpoint_id=N&limit=100` | `200` incidents, newest first (all filters optional) | `400` |
 
 Example:
@@ -145,6 +175,30 @@ A check result looks like this:
 **Safety:** Sentinel refuses to visit private/internal addresses (localhost, 10.x, 192.168.x, 169.254.169.254, etc.) and does not follow redirects. This blocks SSRF attacks, and it also means you can't monitor services on your own machine or home network.
 
 **Tip: sites that redirect.** If a site answers 301/302/307/308 (e.g. `example.com` → `www.example.com`), Sentinel reports that status instead of following it. Register the **final** URL (the one your browser ends up on), or set `expected_status` to the redirect code.
+
+**API test cases** are data, never code: a request plus a list of assertions that Sentinel evaluates itself.
+
+```json
+{
+  "name": "Get user 1",
+  "method": "GET",
+  "url": "https://api.example.com/users/1",
+  "headers": { "Authorization": "Bearer <token>" },
+  "timeout_ms": 5000,
+  "assertions": [
+    { "type": "status_equals", "value": 200 },
+    { "type": "response_time_below_ms", "value": 500 },
+    { "type": "header_contains", "name": "content-type", "value": "application/json" },
+    { "type": "body_contains", "value": "Ada" },
+    { "type": "json_path_exists", "path": "user.email" },
+    { "type": "json_path_equals", "path": "user.id", "value": 1 }
+  ]
+}
+```
+
+Methods: GET, HEAD, POST, PUT, PATCH, DELETE (default GET). `body` is text, not allowed with GET/HEAD. 1–20 assertions. JSON paths use dots, with numbers for array positions (`items.0.name`). Headers `Host`, `Content-Length`, `Connection`, `Transfer-Encoding` can't be set. ⚠️ **Headers are stored unencrypted** in the database, so don't put production secrets in test cases.
+
+**Running a suite:** `POST /suites/:id/runs` answers `202` immediately, and the worker sends each case's request (SSRF guard, timeout, no redirects, response body read up to 1 MB) and checks its assertions. Results include a reason per failed assertion, e.g. `"user.id" is 1, expected 2`. Runs are not retried automatically, because a test may have sent POST/DELETE requests. **Schedules:** set `schedule_minutes` (5–1440, or `null` for manual only) and the worker runs the suite by itself on that interval. Saving a schedule starts the first run right away. ⚠️ Tests send **real** requests: a DELETE test really deletes. Point tests at test environments, not production data.
 
 **Metric definitions** (used by `/stats`):
 - **Window:** the last 24 hours, 7 days, or 30 days, ending now. The response includes the exact `from`/`to`.

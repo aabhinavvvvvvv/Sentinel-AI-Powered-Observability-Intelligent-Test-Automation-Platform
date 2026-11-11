@@ -396,6 +396,116 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 13 — 2026-11-11 — Phase 3 step 1: test suites and cases
+
+**What we built**
+- Tables `test_suites` and `test_cases`, plus an API to create/list/edit/delete them. A test case = request + assertions, stored as data.
+
+**Concepts (simple words)**
+- Health check ("is it up?") vs API test ("does it behave correctly?").
+- Never run user code: describe tests as data and let Sentinel do the checking.
+- `discriminatedUnion`: "look at `type` first, then apply that type's rules".
+- JSONB: storing flexible JSON (headers, assertions) in a Postgres column.
+- PATCH by "merge, then validate the whole thing", so one set of rules applies.
+- Refactor: shared helpers in one file (`src/http.ts`) instead of copies. Tests confirmed nothing broke.
+- Driver gotcha: JS arrays become Postgres arrays unless you `JSON.stringify` them. Proved by removing it (8 tests failed).
+
+**Verification**
+- Dev DB migrated (004). typecheck OK, lint OK, build OK, 168/168 tests.
+
+**Next step**
+- Phase 3 step 2: the runner ("Run now" → worker → results with failure reasons).
+
+---
+
+### Session 14 — 2026-11-11 — Phase 3 step 2: the test runner
+
+**What we built**
+- "Run now" → 202 → the worker runs each case, checks assertions, saves results with reasons, and marks the run passed/failed.
+- Shared safe request function (`http-client.ts`) for checks and tests, which reads at most 1 MB of the body.
+
+**Concepts (simple words)**
+- 202 Accepted: "I've got it, the work happens in the background."
+- Claiming a job with one SQL UPDATE (`WHERE status = 'queued'`) so two workers can't both run it.
+- Why no automatic retry: tests can have side effects (a DELETE really deletes).
+- Reading a stream with a size limit, so a huge response can't fill memory.
+- Keep history when things are deleted: `ON DELETE SET NULL` + a copy of the name.
+- Positive vs negative tests: "user 1 exists" and "user 999999 gives 404" are both useful.
+
+**Verification**
+- typecheck OK (one test-file typing fix), lint OK, build OK, 204/204 tests.
+- Real run against jsonplaceholder.typicode.com: 2 passed, 1 deliberately failing case reported `"id" is 1, expected 2` and `body does not contain "Grace Hopper"`. The developer's own dev worker picked up the job (shared queue).
+
+**Next step**
+- Phase 3 step 3: scheduled runs + dashboard pages for suites and runs.
+
+---
+
+### Session 15 — 2026-11-11 — Phase 3 step 3: schedules + API-test pages
+
+**What we built**
+- Suites can run by themselves every N minutes (BullMQ timer per suite). Dashboard: top nav, "API tests" list, suite page (Run now, schedule, cases, history, add case as JSON), run page (PASS/FAIL + reasons).
+
+**Concepts (simple words)**
+- Reusing a proven pattern (endpoint timers) for suite timers: same `schedule` / `unschedule` / `syncAll`.
+- One queue, two kinds of job (`{runId}` vs `{suiteId}`), told apart by their data.
+- A job in Redis's `wait` list = nobody is taking jobs, which means look at the worker.
+
+**Debugging story (important)**
+- The scheduled run didn't appear. Steps: (1) the timer existed in Redis; (2) the job's id held its due time (already passed); (3) the job was in `wait`; (4) `ps` showed the dev worker's child process was gone; (5) starting the worker by hand worked and processed the waiting job (scheduled run #2). Root cause: the dev worker crashed during a reload of a half-edited file, and tsx only restarts on the next change to its own files. Website checks had silently stopped for ~8 minutes. Lesson: **monitor the monitor** (gap recorded in ARCHITECTURE).
+
+**Verification**
+- Backend: typecheck OK, lint OK, build OK, 218/218 tests. Frontend: typecheck OK, 31/31 tests, build OK.
+- Real: setting a schedule created the suite timer; the worker ran it as a "scheduled" run; resetting to manual removed it. Pages are served by Vite (HTTP 200). Not visually checked by Claude.
+
+**Next step**
+- Commit Phase 3. Then Phase 4: Python analytics foundation (FastAPI, Pandas, statistical anomaly baseline).
+
+---
+
+### Session 16 — 2026-11-11 — Phase 4 step 1: Python service skeleton
+
+**What we built**
+- `analytics/`: a tiny FastAPI service with `GET /health`, two pytest tests, and pinned dependencies.
+
+**Concepts (simple words)**
+- venv = a private library folder per project (like `node_modules`). pip = installer (like npm). requirements.txt = dependency list.
+- FastAPI route = a function with a decorator (`@app.get("/health")`). A returned dict becomes JSON.
+- pytest runs every `test_...` function. `assert` = "must be true".
+- Pin exact versions (`==`) so installs are repeatable.
+- Supply-chain caution: a warning suggested installing `httpx2`. Installing a package just because a message names it is risky (look-alike packages), so it was left for a deliberate, verified change.
+
+**Verification**
+- `pip install -r requirements.txt` OK. `pytest`: 2 passed, 1 deprecation warning (httpx → httpx2 suggestion). Real server: `GET /health` 200, `/docs` 200.
+
+**Next step**
+- Phase 4 step 2: anomaly logic with Pandas (median + robust z-score), tested with made-up data.
+
+---
+
+### Session 17 — 2026-11-11 — Phase 4 step 2: "is this unusual?"
+
+**What we built**
+- `anomaly.py`: hourly P50 from raw checks, a robust z-score against the previous 24 hours, and readable findings.
+
+**Concepts (simple words)**
+- Normal = median of recent hours. Usual wobble = MAD. Score = how many wobbles away. Flag above 3.5.
+- Why medians: a few bad hours drag an average a lot; a median barely moves.
+- Only compare with the past (`shift(1)`), never include the hour being judged.
+- Say "not enough data" (< 12 hours) instead of guessing.
+- Pandas: Series (a labelled column), `resample("1h")` (group by hour), `rolling(24)` (sliding window), `dropna()` (skip missing).
+
+**A wrong claim, caught by a test**
+- I claimed one earlier spike would hide the next from the classic z-score. The test showed z ≈ 4.8 (still caught). The maths: two earlier spikes are needed (z ≈ 3.3). The test now shows that. Lesson: write the test, and let it check your explanation too.
+
+**Verification**
+- pytest: 11 passed, 1 known deprecation warning. Made-up data only, no real-data evaluation yet.
+
+**Next step**
+- Phase 4 step 3: read real checks from Postgres, FastAPI endpoint, Node calls it regularly, `anomalies` table, dashboard.
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

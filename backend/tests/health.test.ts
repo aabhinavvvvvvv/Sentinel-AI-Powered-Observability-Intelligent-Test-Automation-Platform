@@ -11,7 +11,8 @@ function buildApp(ping: (timeoutMs: number) => Promise<void>) {
   // A fake database: only ping() matters for these tests.
   const db = { ping, query: async () => [], close: async () => {} };
   const scheduler = { schedule: async () => {}, unschedule: async () => {} };
-  return createApp({ db, scheduler, logger: silentLogger, healthcheckDbTimeoutMs: 1234 });
+  const testRuns = { enqueue: async () => {}, schedule: async () => {}, unschedule: async () => {} };
+  return createApp({ db, scheduler, testRuns, logger: silentLogger, healthcheckDbTimeoutMs: 1234 });
 }
 
 describe("GET /healthz", () => {

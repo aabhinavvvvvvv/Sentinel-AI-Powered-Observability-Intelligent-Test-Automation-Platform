@@ -7,6 +7,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Database } from "../db.js";
+import { sendValidationError } from "../http.js";
 import { listIncidents } from "./repository.js";
 
 const QuerySchema = z.object({
@@ -20,16 +21,7 @@ export function incidentsRouter(db: Database): Router {
 
   router.get("/", async (req, res) => {
     const query = QuerySchema.safeParse(req.query);
-    if (!query.success) {
-      res.status(400).json({
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "Invalid query parameters",
-          details: query.error.issues.map((i) => ({ field: i.path.join("."), message: i.message })),
-        },
-      });
-      return;
-    }
+    if (!query.success) return sendValidationError(res, query.error);
     res.json(await listIncidents(db, query.data));
   });
 

@@ -37,7 +37,7 @@ export function Overview() {
   return (
     <main>
       <header>
-        <h1>Sentinel</h1>
+        <h1>Websites</h1>
         <span className="muted">Refreshes every 10 seconds · times shown in your time zone</span>
       </header>
 

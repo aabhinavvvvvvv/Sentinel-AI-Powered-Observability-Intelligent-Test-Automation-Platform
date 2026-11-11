@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type { EndpointWithStatus } from "./api";
-import { endpointStatus, formatDuration, timeAgo } from "./status";
+import { endpointStatus, formatDuration, runBadge, scheduleLabel, timeAgo } from "./status";
+
+describe("runBadge", () => {
+  it.each([
+    ["passed", "up"],
+    ["failed", "down"],
+    ["error", "failing"],
+    ["queued", "pending"],
+    ["running", "pending"],
+  ] as const)("%s → %s", (status, badge) => {
+    expect(runBadge(status)).toBe(badge);
+  });
+});
+
+describe("scheduleLabel", () => {
+  it.each([
+    [null, "Manual only"],
+    [15, "Every 15 min"],
+    [60, "Every 1 h"],
+    [1440, "Every 24 h"],
+  ])("%s → %s", (minutes, label) => {
+    expect(scheduleLabel(minutes)).toBe(label);
+  });
+});
 
 describe("formatDuration", () => {
   it.each([

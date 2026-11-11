@@ -10,12 +10,13 @@
  *   GET    /endpoints/:id/stats   uptime + P50/P95/P99 over a window → 200 | 400 | 404
  *   GET    /endpoints/:id/timeseries  the same per hour/6h/day, for charts → 200 | 400 | 404
  */
-import { Router, type Response } from "express";
-import { z, type ZodError } from "zod";
+import { Router } from "express";
+import { z } from "zod";
 import { getEndpointStats, getEndpointTimeseries, WindowSchema } from "../analytics/stats.js";
 import { checkEndpoint } from "../checks/check-endpoint.js";
 import { listCheckResults, saveCheckResult } from "../checks/repository.js";
 import type { Database } from "../db.js";
+import { parseId, sendInvalidId, sendNotFound, sendValidationError } from "../http.js";
 import type { Scheduler } from "../scheduler.js";
 import * as repo from "./repository.js";
 import { CreateEndpointSchema, UpdateEndpointSchema } from "./schemas.js";
@@ -42,7 +43,7 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     const id = parseId(req.params.id);
     if (id === null) return sendInvalidId(res);
     const endpoint = await repo.getEndpoint(db, id);
-    if (!endpoint) return sendNotFound(res, id);
+    if (!endpoint) return sendNotFound(res, "Endpoint", id);
     res.json(endpoint);
   });
 
@@ -52,7 +53,7 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     const parsed = UpdateEndpointSchema.safeParse(req.body);
     if (!parsed.success) return sendValidationError(res, parsed.error);
     const endpoint = await repo.updateEndpoint(db, id, parsed.data);
-    if (!endpoint) return sendNotFound(res, id);
+    if (!endpoint) return sendNotFound(res, "Endpoint", id);
     await scheduler.schedule(endpoint); // new interval, or paused → timer removed
     res.json(endpoint);
   });
@@ -64,7 +65,7 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     const id = parseId(req.params.id);
     if (id === null) return sendInvalidId(res);
     const endpoint = await repo.getEndpoint(db, id);
-    if (!endpoint) return sendNotFound(res, id);
+    if (!endpoint) return sendNotFound(res, "Endpoint", id);
     res.json(await saveCheckResult(db, id, await checkEndpoint(endpoint)));
   });
 
@@ -74,7 +75,7 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     if (id === null) return sendInvalidId(res);
     const limit = LimitSchema.safeParse(req.query.limit);
     if (!limit.success) return sendValidationError(res, limit.error);
-    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, id);
+    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, "Endpoint", id);
     res.json(await listCheckResults(db, id, limit.data));
   });
 
@@ -84,7 +85,7 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     if (id === null) return sendInvalidId(res);
     const window = WindowSchema.safeParse(req.query.window);
     if (!window.success) return sendValidationError(res, window.error);
-    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, id);
+    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, "Endpoint", id);
     res.json(await getEndpointStats(db, id, window.data));
   });
 
@@ -94,14 +95,14 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
     if (id === null) return sendInvalidId(res);
     const window = WindowSchema.safeParse(req.query.window);
     if (!window.success) return sendValidationError(res, window.error);
-    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, id);
+    if (!(await repo.getEndpoint(db, id))) return sendNotFound(res, "Endpoint", id);
     res.json(await getEndpointTimeseries(db, id, window.data));
   });
 
   router.delete("/:id", async (req, res) => {
     const id = parseId(req.params.id);
     if (id === null) return sendInvalidId(res);
-    if (!(await repo.deleteEndpoint(db, id))) return sendNotFound(res, id);
+    if (!(await repo.deleteEndpoint(db, id))) return sendNotFound(res, "Endpoint", id);
     await scheduler.unschedule(id); // stop its timer
     res.status(204).end(); // 204 No Content: success, nothing to send back
   });
@@ -111,28 +112,3 @@ export function endpointsRouter(db: Database, scheduler: EndpointScheduler): Rou
 
 // ?limit= arrives as text (or is missing), so convert it to a number and check the range.
 const LimitSchema = z.coerce.number().int().min(1).max(500).default(50);
-
-/** "42" → 42. Anything else (e.g. "abc", "0", "-1", "1.5", too big for INTEGER) → null. */
-function parseId(raw: string): number | null {
-  if (!/^[1-9]\d{0,9}$/.test(raw)) return null;
-  const id = Number(raw);
-  return id <= 2_147_483_647 ? id : null; // Postgres INTEGER maximum
-}
-
-function sendValidationError(res: Response, error: ZodError): void {
-  res.status(400).json({
-    error: {
-      code: "VALIDATION_ERROR",
-      message: "Request body is invalid",
-      details: error.issues.map((issue) => ({ field: issue.path.join("."), message: issue.message })),
-    },
-  });
-}
-
-function sendInvalidId(res: Response): void {
-  res.status(400).json({ error: { code: "INVALID_ID", message: "id must be a positive integer" } });
-}
-
-function sendNotFound(res: Response, id: number): void {
-  res.status(404).json({ error: { code: "NOT_FOUND", message: `Endpoint ${id} not found` } });
-}

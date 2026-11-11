@@ -14,15 +14,17 @@ import { incidentsRouter } from "./incidents/routes.js";
 import type { Logger } from "./logger.js";
 import { errorHandler, notFound } from "./middleware/errors.js";
 import { healthRouter } from "./routes/health.js";
+import { suitesRouter, type SuiteRunner } from "./testing/routes.js";
 
 export interface AppDeps {
   db: Database;
   scheduler: EndpointScheduler;
+  testRuns: SuiteRunner;
   logger: Logger;
   healthcheckDbTimeoutMs: number;
 }
 
-export function createApp({ db, scheduler, logger, healthcheckDbTimeoutMs }: AppDeps): Express {
+export function createApp({ db, scheduler, testRuns, logger, healthcheckDbTimeoutMs }: AppDeps): Express {
   const app = express();
 
   // Don't advertise "X-Powered-By: Express" (free information for attackers).
@@ -36,6 +38,7 @@ export function createApp({ db, scheduler, logger, healthcheckDbTimeoutMs }: App
   app.use(healthRouter({ db, logger, dbTimeoutMs: healthcheckDbTimeoutMs }));
   app.use("/endpoints", endpointsRouter(db, scheduler));
   app.use("/incidents", incidentsRouter(db));
+  app.use("/suites", suitesRouter(db, testRuns));
 
   app.use(notFound); // 4. nothing matched → 404
   app.use(errorHandler(logger)); // 5. anything threw → JSON error

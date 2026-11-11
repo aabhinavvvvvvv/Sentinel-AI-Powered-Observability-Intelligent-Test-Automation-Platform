@@ -49,6 +49,20 @@ export function formatDuration(ms: number): string {
   return `${seconds}s`;
 }
 
+/** Which badge colour a test run gets: passed = green, failed = red, error = amber, in progress = grey. */
+export function runBadge(status: "queued" | "running" | "passed" | "failed" | "error"): Status {
+  if (status === "passed") return "up";
+  if (status === "failed") return "down";
+  if (status === "error") return "failing";
+  return "pending";
+}
+
+/** schedule_minutes → words: null → "Manual only", 60 → "Every 1 h", 15 → "Every 15 min". */
+export function scheduleLabel(minutes: number | null): string {
+  if (minutes === null) return "Manual only";
+  return minutes % 60 === 0 ? `Every ${minutes / 60} h` : `Every ${minutes} min`;
+}
+
 /** A chart bucket's start time as a short label, in the viewer's time zone. */
 export function bucketLabel(iso: string, range: "24h" | "7d" | "30d"): string {
   const date = new Date(iso);

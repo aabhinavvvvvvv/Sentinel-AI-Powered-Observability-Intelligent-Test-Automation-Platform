@@ -195,6 +195,52 @@ summary {
   color: var(--muted);
 }
 
+.topnav {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.topnav .brand {
+  font-weight: 700;
+}
+.topnav a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.topnav a.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.json-editor {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.85rem;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.results li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.results li div + div {
+  margin-top: 4px;
+  padding-left: 12px;
+}
+
 .add-form {
   display: flex;
   flex-wrap: wrap;

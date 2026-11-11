@@ -1,8 +1,9 @@
 /**
  * The worker: a separate program from the API (`npm run dev:worker`).
- * It runs two kinds of jobs from Redis:
- *   "checks" queue → check an endpoint, save the result, open/close incidents
- *   "alerts" queue → send the email for an opened/resolved incident
+ * It runs three kinds of jobs from Redis:
+ *   "checks" queue    → check an endpoint, save the result, open/close incidents
+ *   "alerts" queue    → send the email for an opened/resolved incident
+ *   "test-runs" queue → run an API test suite and save each case's result
  *
  * Why separate from the API? Checks can be slow (up to 30s each). Running them
  * here means the API stays fast for users no matter how many checks are running.
@@ -17,15 +18,20 @@ import { createDatabase } from "./db.js";
 import { listEndpoints } from "./endpoints/repository.js";
 import { createLogger } from "./logger.js";
 import { createScheduler, DEFAULT_PREFIX, QUEUE_NAME, type CheckJob } from "./scheduler.js";
+import { listSuites } from "./testing/repository.js";
+import { createTestRunQueue, TEST_RUNS_QUEUE, type TestRunJob } from "./testing/run-queue.js";
+import { createScheduledRun, runSuite } from "./testing/run-suite.js";
 
 const CHECK_CONCURRENCY = 10; // at most 10 checks at the same time
 const ALERT_CONCURRENCY = 2; // at most 2 emails at the same time
+const TEST_RUN_CONCURRENCY = 2; // at most 2 suites running at the same time
 
 const config = loadConfig();
 const logger = createLogger(config.LOG_LEVEL);
 const db = createDatabase(config.DATABASE_URL, logger);
 const scheduler = createScheduler(config.REDIS_URL);
 const alertQueue = createAlertQueue(config.REDIS_URL);
+const testRunQueue = createTestRunQueue(config.REDIS_URL);
 const mailer = createMailer(config.SMTP_URL, config.ALERT_EMAIL_FROM);
 const alertsEnabled = config.ALERT_EMAIL_TO.length > 0;
 const connection = { url: config.REDIS_URL };
@@ -34,7 +40,9 @@ const connection = { url: config.REDIS_URL };
 //    This repairs anything missed while Redis or the worker was down.
 const endpoints = await listEndpoints(db);
 await scheduler.syncAll(endpoints);
-logger.info({ endpoints: endpoints.length }, "timers synced with database");
+const suites = await listSuites(db);
+await testRunQueue.syncAll(suites);
+logger.info({ endpoints: endpoints.length, suites: suites.length }, "timers synced with database");
 
 // 2. Check jobs: "check endpoint N now".
 const checkWorker = new Worker<CheckJob>(
@@ -64,6 +72,25 @@ const alertWorker = new Worker<AlertJob>(
   { connection, prefix: DEFAULT_PREFIX, concurrency: ALERT_CONCURRENCY },
 );
 
+// 4. Test-run jobs: either "run #N" (from Run now) or "suite N's timer fired" (scheduled).
+//    Cases run one at a time inside the job.
+const testRunWorker = new Worker<TestRunJob>(
+  TEST_RUNS_QUEUE,
+  async (job) => {
+    const runId = "runId" in job.data ? job.data.runId : await createScheduledRun(db, job.data.suiteId);
+    if (runId === null) return; // scheduled suite was deleted or has no cases
+    const run = await runSuite(db, runId);
+    if (!run) return; // already ran, or deleted
+    logger.info(
+      { runId: run.id, suiteId: run.suite_id, by: run.triggered_by, status: run.status, passed: run.passed, failed: run.failed },
+      "test run done",
+    );
+  },
+  { connection, prefix: DEFAULT_PREFIX, concurrency: TEST_RUN_CONCURRENCY },
+);
+testRunWorker.on("failed", (job, err) => logger.error({ err, job: job?.data }, "test run job failed"));
+testRunWorker.on("error", (err) => logger.error({ err }, "test run worker error"));
+
 // A check job "fails" only if OUR code breaks (e.g. the database is down), not when a website is down.
 // We don't retry it: the next timer tick checks the endpoint again anyway.
 checkWorker.on("failed", (job, err) => logger.error({ err, endpointId: job?.data.endpointId }, "check job failed"));
@@ -79,11 +106,11 @@ logger.info(
   "worker started",
 );
 
-// 4. Graceful shutdown: let running jobs finish, then close connections.
+// 5. Graceful shutdown: let running jobs finish, then close connections.
 async function shutdown(signal: string) {
   logger.info({ signal }, "worker shutting down");
-  await Promise.all([checkWorker.close(), alertWorker.close()]); // waits for in-progress jobs
-  await Promise.all([scheduler.close(), alertQueue.close()]);
+  await Promise.all([checkWorker.close(), alertWorker.close(), testRunWorker.close()]); // waits for in-progress jobs
+  await Promise.all([scheduler.close(), alertQueue.close(), testRunQueue.close()]);
   mailer.close();
   await db.close();
   process.exit(0);

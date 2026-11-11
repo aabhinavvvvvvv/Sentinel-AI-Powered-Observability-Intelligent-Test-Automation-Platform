@@ -7,6 +7,7 @@ import { ConfigError, loadConfig } from "./config.js";
 import { createDatabase } from "./db.js";
 import { createLogger } from "./logger.js";
 import { createScheduler } from "./scheduler.js";
+import { createTestRunQueue } from "./testing/run-queue.js";
 
 const SHUTDOWN_GRACE_MS = 10_000;
 
@@ -15,9 +16,11 @@ function main(): void {
   const logger = createLogger(config.LOG_LEVEL);
   const db = createDatabase(config.DATABASE_URL, logger);
   const scheduler = createScheduler(config.REDIS_URL);
+  const testRuns = createTestRunQueue(config.REDIS_URL);
   const app = createApp({
     db,
     scheduler,
+    testRuns,
     logger,
     healthcheckDbTimeoutMs: config.HEALTHCHECK_DB_TIMEOUT_MS,
   });
@@ -49,7 +52,7 @@ function main(): void {
     }, SHUTDOWN_GRACE_MS).unref();
 
     server.close(() => {
-      Promise.all([scheduler.close(), db.close()])
+      Promise.all([scheduler.close(), testRuns.close(), db.close()])
         .then(() => {
           logger.info("shutdown complete");
           process.exit(0);

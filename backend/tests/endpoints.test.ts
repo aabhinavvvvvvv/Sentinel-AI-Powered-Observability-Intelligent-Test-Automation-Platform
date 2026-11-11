@@ -11,7 +11,8 @@ import { resetDb, silentLogger } from "./helpers.js";
 const db = createDatabase(process.env.TEST_DATABASE_URL!, silentLogger);
 // A fake scheduler that only records calls (the real one is tested in scheduler.test.ts).
 const scheduler = { schedule: vi.fn(async () => {}), unschedule: vi.fn(async () => {}) };
-const app = createApp({ db, scheduler, logger: silentLogger, healthcheckDbTimeoutMs: 1000 });
+const testRuns = { enqueue: async () => {}, schedule: async () => {}, unschedule: async () => {} };
+const app = createApp({ db, scheduler, testRuns, logger: silentLogger, healthcheckDbTimeoutMs: 1000 });
 
 beforeEach(async () => {
   vi.clearAllMocks();

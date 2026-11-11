@@ -73,6 +73,63 @@ export interface TimeseriesPoint {
   p95_ms: number | null;
 }
 
+// ----- API testing -----
+
+export type RunStatus = "queued" | "running" | "passed" | "failed" | "error";
+
+export interface TestSuite {
+  id: number;
+  endpoint_id: number;
+  name: string;
+  schedule_minutes: number | null; // null = manual only
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestSuiteListItem extends TestSuite {
+  endpoint_name: string;
+  case_count: number;
+  last_run: { id: number; status: RunStatus; passed: number; failed: number; created_at: string } | null;
+}
+
+export interface TestCase {
+  id: number;
+  suite_id: number;
+  name: string;
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: string | null;
+  timeout_ms: number;
+  assertions: { type: string; [key: string]: unknown }[];
+}
+
+export interface TestRun {
+  id: number;
+  suite_id: number;
+  triggered_by: "manual" | "scheduled";
+  status: RunStatus;
+  total: number;
+  passed: number;
+  failed: number;
+  error_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface TestCaseResult {
+  id: number;
+  case_id: number | null;
+  case_name: string;
+  passed: boolean;
+  status_code: number | null;
+  response_time_ms: number;
+  error_type: string | null;
+  error_message: string | null;
+  failures: { assertion: { type: string }; message: string }[];
+}
+
 export interface NewEndpoint {
   name: string;
   url: string;
@@ -122,4 +179,22 @@ export const api = {
     request<{ window: StatsRange; bucket: string; points: TimeseriesPoint[] }>(
       `/endpoints/${id}/timeseries?window=${range}`,
     ),
+
+  // API testing
+  listSuites: () => request<TestSuiteListItem[]>("/suites"),
+  createSuite: (input: { endpoint_id: number; name: string; schedule_minutes: number | null }) =>
+    request<TestSuite>("/suites", { method: "POST", body: JSON.stringify(input) }),
+  getSuite: (id: number) => request<TestSuite & { cases: TestCase[] }>(`/suites/${id}`),
+  updateSuite: (id: number, changes: { name?: string; schedule_minutes?: number | null }) =>
+    request<TestSuite>(`/suites/${id}`, { method: "PATCH", body: JSON.stringify(changes) }),
+  deleteSuite: (id: number) => request<void>(`/suites/${id}`, { method: "DELETE" }),
+  /** `json` is the test case exactly as the user typed it; the backend validates it. */
+  addCase: (suiteId: number, json: string) =>
+    request<TestCase>(`/suites/${suiteId}/cases`, { method: "POST", body: json }),
+  deleteCase: (suiteId: number, caseId: number) =>
+    request<void>(`/suites/${suiteId}/cases/${caseId}`, { method: "DELETE" }),
+  runSuite: (suiteId: number) => request<TestRun>(`/suites/${suiteId}/runs`, { method: "POST" }),
+  listRuns: (suiteId: number) => request<TestRun[]>(`/suites/${suiteId}/runs?limit=20`),
+  getRun: (suiteId: number, runId: number) =>
+    request<TestRun & { results: TestCaseResult[] }>(`/suites/${suiteId}/runs/${runId}`),
 };

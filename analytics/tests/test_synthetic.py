@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from ml.synthetic import DAYS, START, TRAIN_DAYS, make_dataset, split_by_time
+from ml.synthetic import DAYS, SLOW, START, TRAIN_DAYS, make_dataset, make_slowdown_dataset, split_by_time
 
 data = make_dataset()
 normal = data[data["kind"] == ""]
@@ -49,3 +49,38 @@ def test_split_is_by_time_with_every_problem_kind_in_the_test_period():
     assert train["time"].max() < test["time"].min()  # all training hours come before all test hours
     assert test["time"].min() == START + pd.Timedelta(days=TRAIN_DAYS)
     assert set(test["kind"]) == {"", "spike", "level_shift", "drift", "quiet"}
+
+
+# ---- Prediction experiment data ----
+
+slow = make_slowdown_dataset()
+
+
+def test_slowdown_data_is_reproducible():
+    assert make_slowdown_dataset(seed=42).equals(make_slowdown_dataset(seed=42))
+    assert not make_slowdown_dataset(seed=42).equals(make_slowdown_dataset(seed=7))
+
+
+def test_one_episode_per_two_day_block_with_both_kinds_before_and_after_the_split():
+    episode_starts = slow[(slow["kind"] != "") & (slow["kind"] != slow["kind"].shift())]
+    assert len(episode_starts) == DAYS // 2
+    train, test = split_by_time(slow)
+    assert set(train["kind"]) == set(test["kind"]) == {"", "creeping", "sudden"}
+
+
+def test_creeping_gives_warning_hours_but_sudden_does_not():
+    creeping = slow[slow["kind"] == "creeping"]
+    episodes = len(creeping) // 12
+    # 5 hours per creeping episode are slower than normal but below "slow": +0%, +7%, +15%, +22%, +29%
+    assert (creeping["slowdown"] < SLOW).sum() == 5 * episodes
+    assert (slow.loc[slow["kind"] == "sudden", "slowdown"] == 1.5).all()
+
+
+def test_target_says_slow_next_hour_even_when_this_hour_looks_normal():
+    # The hour right before a sudden slowdown looks normal, yet its answer is "slow next hour".
+    # Nothing in the data can warn about it: that's what makes sudden problems unpredictable.
+    before_sudden = (slow["kind"] == "") & (slow["kind"].shift(-1) == "sudden")
+    assert before_sudden.sum() > 0
+    assert slow.loc[before_sudden, "slow_next_hour"].all()
+    assert (slow.loc[before_sudden, "slowdown"] == 1.0).all()
+    assert not slow["slow_next_hour"].iloc[-1]

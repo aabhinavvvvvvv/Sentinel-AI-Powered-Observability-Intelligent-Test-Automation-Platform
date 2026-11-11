@@ -14,6 +14,13 @@ import pandas as pd
 DAYS = 30
 TRAIN_DAYS = 20  # learn on days 1-20, test on days 21-30 (the "future")
 START = pd.Timestamp("2026-01-01", tz="UTC")
+SLOW = 1.3  # prediction experiment: "slow" = at least 30% slower than normal for that hour
+
+
+def normal_p50(rng: np.random.Generator, time: pd.DatetimeIndex) -> np.ndarray:
+    """Normal behaviour: 240 ms, slower in the afternoon (peak ~14:00), faster at night, plus wobble."""
+    daily_rhythm = 40 * np.sin((time.hour.to_numpy() - 8) / 24 * 2 * np.pi)
+    return 240 + daily_rhythm + rng.normal(0, 8, len(time))  # normal(0, 8): random wobble of about ±8 ms
 
 
 def make_dataset(seed: int = 42) -> pd.DataFrame:
@@ -27,11 +34,7 @@ def make_dataset(seed: int = 42) -> pd.DataFrame:
     rng = np.random.default_rng(seed)  # a random-number generator with a fixed starting point
     n = DAYS * 24
     time = pd.date_range(START, periods=n, freq="h")
-
-    # Normal behaviour: 240 ms, slower in the afternoon (peak ~14:00), faster at night, plus wobble.
-    hour_of_day = time.hour.to_numpy()
-    daily_rhythm = 40 * np.sin((hour_of_day - 8) / 24 * 2 * np.pi)
-    p50 = 240 + daily_rhythm + rng.normal(0, 8, n)  # normal(0, 8): random wobble of about ±8 ms
+    p50 = normal_p50(rng, time)
     kind = np.full(n, "", dtype=object)  # the answer key; "" = normal
 
     def at(day: int, hour: int) -> int:
@@ -61,6 +64,42 @@ def make_dataset(seed: int = 42) -> pd.DataFrame:
         kind[i] = "quiet"
 
     return pd.DataFrame({"time": time, "p50_ms": p50.round(1), "kind": kind})
+
+
+def make_slowdown_dataset(seed: int = 42) -> pd.DataFrame:
+    """
+    SYNTHETIC data for the PREDICTION experiment: "will the NEXT hour be slow?"
+
+    Every 2-day block holds one slowdown at a random hour, of one of two kinds:
+      creeping  12 hours getting slower, +0% → +80% (like a memory leak). Its first hours are
+                WARNING SIGNS: slower than usual, but not yet "slow".
+      sudden    6 hours at +50%, with no warning at all (like a bad deploy).
+
+    Columns: time, p50_ms, kind ("" / creeping / sudden),
+      slowdown        how much slower than normal we made this hour (1.0 = normal)
+      slow_next_hour  the TARGET (the answer we want to predict): is the next hour ≥ 30% slower?
+    """
+    rng = np.random.default_rng(seed)
+    n = DAYS * 24
+    time = pd.date_range(START, periods=n, freq="h")
+    p50 = normal_p50(rng, time)
+    slowdown = np.ones(n)
+    kind = np.full(n, "", dtype=object)
+
+    for block in range(0, n, 48):  # 48 hours = one 2-day block
+        start = block + int(rng.integers(0, 48 - 12))  # random start, so the episode fits in the block
+        if rng.random() < 0.5:
+            slowdown[start : start + 12] = 1 + np.linspace(0, 0.8, 12)
+            kind[start : start + 12] = "creeping"
+        else:
+            slowdown[start : start + 6] = 1.5
+            kind[start : start + 6] = "sudden"
+
+    slow_next_hour = np.append(slowdown[1:] >= SLOW, False)  # the last hour has no "next hour" in the data
+    return pd.DataFrame(
+        {"time": time, "p50_ms": (p50 * slowdown).round(1), "kind": kind,
+         "slowdown": slowdown, "slow_next_hour": slow_next_hour}
+    )
 
 
 def split_by_time(data: pd.DataFrame, train_days: int = TRAIN_DAYS) -> tuple[pd.DataFrame, pd.DataFrame]:

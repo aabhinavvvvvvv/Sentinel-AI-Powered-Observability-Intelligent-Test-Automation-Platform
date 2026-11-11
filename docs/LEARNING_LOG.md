@@ -531,6 +531,101 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 19 — 2026-11-11 — Phase 5 step 1: synthetic dataset (option b)
+
+**Decision**
+- The developer chose to start Phase 5 on clearly labelled SYNTHETIC data, while real history accumulates.
+
+**What we built**
+- `analytics/ml/synthetic.py`: 30 days of hourly P50 (daily rhythm + noise) with planted problems and an answer key: 6 spikes, a 12-hour level shift, a 12-hour drift, 4 quiet hours. A time-based split: train days 1–20, test days 21–30.
+
+**Concepts (simple words)**
+- Synthetic data = made up, but with known answers (labels), so detectors can be scored.
+- Seed = fixed starting point for "random" numbers, so the data is identical every run.
+- Precision ("when it beeps, is it real?") vs recall ("of the real problems, how many did it catch?").
+- Time-based split: learn on the past, test on the future. Shuffling would leak the future (data leakage).
+- Isolation Forest idea: unusual points are isolated with few random "questions".
+
+**Verification**
+- pytest: 6 new tests pass (reproducible, realistic, answer-key counts, intended sizes, split by time).
+
+**Next step**
+- Phase 5 step 2: score the current robust z-score rule on the test days (precision, recall, per problem type).
+
+---
+
+### Session 20 — 2026-11-11 — Phase 5 step 2: scoring the current rule
+
+**What we built**
+- `ml/evaluate.py`: per-hour scoring (true/false alarms, missed, precision, recall, F1, caught per problem type). Results recorded in `docs/EXPERIMENTS.md`.
+
+**Result (synthetic test days)**
+- Robust z vs previous 24 h: precision 1.00, recall 0.18, F1 0.30. Spikes 2/2, drift 3/12, level shift 0/12, quiet 0/2.
+
+**Concepts (simple words)**
+- Confusion counts: true alarm, false alarm, missed, correct quiet.
+- Precision vs recall trade-off. F1 is only high when both are.
+- "Undefined" is an honest answer (no alarms means precision is 0 ÷ 0).
+- Seasonality (a daily rhythm) can hide problems: comparing 1 PM with the whole day makes the normal wobble look 3–4× bigger than it is.
+- Investigate a surprising result with the numbers (MAD ≈ 29 ms vs real wobble ≈ 8 ms) before explaining it.
+
+**Verification**
+- pytest: 27 passed (3 new scoring tests).
+
+**Next step**
+- Phase 5 step 3: a time-of-day-aware baseline and Isolation Forest, compared on the same test days.
+
+---
+
+### Session 21 — 2026-11-11 — Phase 5 step 3: statistics vs ML
+
+**What we built**
+- `ml/detectors.py`: a same-hour robust z (previous 7 days) and Isolation Forest (scikit-learn) with 5 features. `ml/evaluate.py` compares all three. Results are in `docs/EXPERIMENTS.md`.
+
+**Result (synthetic)**
+- F1, mean over 5 seeds: same hour 0.82 > Isolation Forest 0.58 > live rule 0.37. Live rule: 0 false alarms but recall 0.23.
+
+**Concepts (simple words)**
+- Features = the facts a model gets to look at. Hour of day as sin/cos so 23:00 and 00:00 are neighbours.
+- `fit` on the past only, then `predict`. Isolation Forest returns -1 for "unusual".
+- Contamination = expected share of unusual points. A knob; never tune it on the test set.
+- Compare ML against the *best* simple baseline, not the weakest. Here the simple method won.
+- Check robustness: one dataset can mislead, so rerun with other seeds.
+- Small samples make spread estimates noisy (7 values → MAD sometimes too small → false alarms).
+
+**Verification**
+- pytest: 32 passed (5 new detector tests). Comparison is reproducible (tested).
+
+**Next step**
+- Decide: run the same-hour detector live next to the current one (both saved, compared on real data later), or keep live as is. Then Phase 5 predictive experiment or Phase 6.
+
+---
+
+### Session 22 — 2026-11-11 — Phase 5: feature engineering + a fair verdict
+
+**Context**
+- The developer worried the project would stop being ML. Answer: the evaluation work is core ML engineering; more ML is ahead (prediction, text classification, ranking); and ML can run live in shadow mode once it earns it.
+
+**What we built**
+- Isolation Forest v2: engineered feature "vs same-hour median", slower-only. A development/held-out seed protocol, with an equal tuning budget for both methods.
+
+**Result (held-out synthetic, 10 datasets)**
+- Same hour (4.5) F1 0.88 · IF v2 (5%) F1 0.86 · IF v1 0.44 · live rule 0.35. Development ≈ held-out, so no overfitting.
+
+**Concepts (simple words)**
+- Feature engineering: give the model the right facts. It doubled F1 without changing the algorithm.
+- Development vs held-out data: tune on one, judge on the other, once.
+- A fair comparison gives every method the same tuning effort.
+- Precision/recall trade-off as a dial (cut-off, contamination): no single "best". It depends on what mistakes cost.
+
+**Verification**
+- pytest: 34 passed (2 new: v2 feature correctness, never flags faster hours).
+
+**Next step**
+- Shadow mode: run the same-hour statistics and IF v2 live next to the current rule (all saved with their `method`), and compare on real data once 5+ days of history exist.
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

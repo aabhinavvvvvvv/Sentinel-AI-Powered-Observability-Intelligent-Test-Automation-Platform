@@ -230,3 +230,19 @@ Each record: context, options, decision, why, trade-offs, and what would make us
 - Not evaluated on real data yet.
 
 **Revisit if.** False positives or missed slowdowns show up in real data (tune, or add an ML detector and compare via `method`), or more metrics are needed.
+
+---
+
+## ADR-014 — Shadow mode for new detectors
+
+**Date:** 2026-11-11 · **Status:** Accepted
+
+**Context.** On held-out synthetic data, same-hour statistics (F1 0.88) and Isolation Forest v2 (F1 0.86) beat the live rule (0.35). Synthetic data doesn't prove real-world value.
+
+**Decision.** Run both live in **shadow mode**: computed hourly, saved with their `method`, and shown with a SHADOW tag. Nothing is promoted (e.g. alerting on them) until real-data evidence supports it.
+
+**Why.** It's the standard safe way to introduce models. It collects real evidence, users see the output with a clear "unproven" label, and it's reversible.
+
+**Trade-offs.** More findings on the page, possibly noisy. 14 days of data loaded per endpoint per hour. Real-data evaluation still lacks an answer key (it will need manual review of findings).
+
+**Revisit if.** After enough real history, review shadow findings against incidents and known events, then promote, tune, or drop each detector.

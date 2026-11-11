@@ -223,7 +223,7 @@ These are proposed choices. Review the existing repository and explain any chang
 - Evaluate and visualize results.
 
 ### Phase 5 — ML anomaly detection and predictive experiments
-> **Status (2026-11-11):** experiments 1–2 done on SYNTHETIC data (`docs/EXPERIMENTS.md`). On 10 held-out datasets: same-hour statistics (cut-off 4.5) F1 0.88, Isolation Forest v2 with engineered features (5%) F1 0.86, Isolation Forest v1 0.44, live 24-hour rule 0.35. Nothing promoted yet; the proposed next step is running both best methods live side by side (shadow mode). Predictive analysis not started.
+> **Status (2026-11-11):** experiments 1–2 done on SYNTHETIC data (`docs/EXPERIMENTS.md`). On 10 held-out datasets: same-hour statistics (cut-off 4.5) F1 0.88, Isolation Forest v2 with engineered features (5%) F1 0.86, Isolation Forest v1 0.44, live 24-hour rule 0.35. Both best methods now run live in **shadow mode** (ADR-014), saved and labelled, awaiting real-data evidence. Predictive analysis not started.
 
 - Compare statistical baseline with Isolation Forest.
 - Define predictive target and horizon.

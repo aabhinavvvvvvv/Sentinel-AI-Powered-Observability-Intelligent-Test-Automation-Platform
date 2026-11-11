@@ -82,6 +82,7 @@ def to_findings(scored: pd.DataFrame, metric: str = "P50 response time", window:
                     f"the normal {row['baseline']:.0f} ms (median of up to the previous {window} hours). "
                     "This is a statistical signal, not a diagnosis."
                 ),
+                "method": METHOD,
             }
         )
     return findings

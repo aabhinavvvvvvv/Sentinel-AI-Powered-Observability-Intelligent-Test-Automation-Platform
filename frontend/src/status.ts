@@ -63,6 +63,14 @@ export function scheduleLabel(minutes: number | null): string {
   return minutes % 60 === 0 ? `Every ${minutes / 60} h` : `Every ${minutes} min`;
 }
 
+/** Human name for an anomaly detector, and whether it's still in shadow mode (being evaluated). */
+export function methodLabel(method: string): { name: string; shadow: boolean } {
+  if (method === "robust_z_v1") return { name: "Statistics · previous 24 h", shadow: false };
+  if (method === "same_hour_z_v1") return { name: "Statistics · same hour, previous 7 days", shadow: true };
+  if (method === "isolation_forest_v2") return { name: "Machine learning · Isolation Forest", shadow: true };
+  return { name: method, shadow: true }; // an unknown detector is treated as unproven
+}
+
 /** A chart bucket's start time as a short label, in the viewer's time zone. */
 export function bucketLabel(iso: string, range: "24h" | "7d" | "30d"): string {
   const date = new Date(iso);

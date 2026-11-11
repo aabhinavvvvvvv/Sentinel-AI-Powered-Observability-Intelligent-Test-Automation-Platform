@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { EndpointWithStatus } from "./api";
-import { endpointStatus, formatDuration, runBadge, scheduleLabel, timeAgo } from "./status";
+import { endpointStatus, formatDuration, methodLabel, runBadge, scheduleLabel, timeAgo } from "./status";
+
+describe("methodLabel", () => {
+  it("only the proven live rule is not shadow; unknown detectors count as unproven", () => {
+    expect(methodLabel("robust_z_v1").shadow).toBe(false);
+    expect(methodLabel("same_hour_z_v1").shadow).toBe(true);
+    expect(methodLabel("isolation_forest_v2").shadow).toBe(true);
+    expect(methodLabel("something_new")).toEqual({ name: "something_new", shadow: true });
+  });
+});
 
 describe("runBadge", () => {
   it.each([

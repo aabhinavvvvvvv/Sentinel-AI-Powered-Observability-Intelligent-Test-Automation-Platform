@@ -93,6 +93,18 @@ describe("EndpointDetail", () => {
             explanation: "P50 response time was 900 ms ... This is a statistical signal, not a diagnosis.",
             method: "robust_z_v1",
           },
+          {
+            id: 2,
+            endpoint_id: 23,
+            metric: "P50 response time",
+            bucket_start: "2026-11-10T21:00:00Z",
+            value: 330,
+            baseline: 250,
+            score: 1.32,
+            severity: "warning",
+            explanation: "Isolation Forest (machine learning, shadow mode) flagged this hour ...",
+            method: "isolation_forest_v2",
+          },
         ],
       ],
       "/api/endpoints/23/checks": [200, [check(3, true, 300), check(2, true, 100), check(1, false, 50)]],
@@ -124,6 +136,11 @@ describe("EndpointDetail", () => {
     // Anomaly: measured value vs normal, and labelled as a signal, not a diagnosis.
     expect(screen.getByText(/900 ms vs normal 240 ms/)).toBeTruthy();
     expect(screen.getByText(/statistical signal, not a diagnosis/)).toBeTruthy();
+    // Each finding says who found it; only the shadow (still-being-evaluated) one has the SHADOW tag.
+    expect(screen.getByText(/Found by: Statistics · previous 24 h/)).toBeTruthy();
+    expect(screen.getByText(/Found by: Machine learning · Isolation Forest/)).toBeTruthy();
+    // Count only the SHADOW tags (<span>), not the word in the explanation sentence (<strong>).
+    expect(screen.getAllByText("SHADOW", { selector: "span" })).toHaveLength(1);
   });
 
   it("shows the API's message when the website doesn't exist", async () => {

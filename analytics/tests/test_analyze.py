@@ -37,10 +37,11 @@ def test_finds_the_slow_hour_in_real_stored_checks(writer):
 
     body = client.post(f"/analyze/{eid}").json()
 
-    assert body["method"] == "robust_z_v1"
     assert body["hours_scored"] > 0
+    # Only the live rule answers: the shadow detectors need 5+ days of history, and this has ~1.
     assert len(body["findings"]) == 1
     finding = body["findings"][0]
+    assert finding["method"] == "robust_z_v1"
     assert finding["value"] == 900
     assert finding["baseline"] == pytest.approx(241, abs=1)  # pytest.approx = "close enough"
 
@@ -65,12 +66,7 @@ def test_failed_checks_do_not_count_as_slow(writer):
 
 def test_no_checks_means_no_findings(writer):
     eid = add_endpoint(writer)
-    assert client.post(f"/analyze/{eid}").json() == {
-        "endpoint_id": eid,
-        "method": "robust_z_v1",
-        "hours_scored": 0,
-        "findings": [],
-    }
+    assert client.post(f"/analyze/{eid}").json() == {"endpoint_id": eid, "hours_scored": 0, "findings": []}
 
 
 def test_unknown_endpoint_is_404(writer):

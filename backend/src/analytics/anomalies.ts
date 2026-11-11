@@ -19,10 +19,12 @@ const FindingSchema = z.object({
   score: z.number(),
   severity: z.enum(["warning", "critical"]),
   explanation: z.string(),
+  // Which detector found it: "robust_z_v1" (live rule) or a shadow-mode one being evaluated,
+  // e.g. "same_hour_z_v1", "isolation_forest_v2".
+  method: z.string(),
 });
 const AnalysisSchema = z.object({
   endpoint_id: z.number().int(),
-  method: z.string(),
   hours_scored: z.number().int(),
   findings: z.array(FindingSchema),
 });
@@ -64,7 +66,7 @@ export async function saveFindings(db: Database, analysis: Analysis): Promise<nu
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (endpoint_id, metric, bucket_start, method) DO NOTHING
        RETURNING id`,
-      [analysis.endpoint_id, f.metric, f.time, f.value, f.baseline, f.score, f.severity, f.explanation, analysis.method],
+      [analysis.endpoint_id, f.metric, f.time, f.value, f.baseline, f.score, f.severity, f.explanation, f.method],
     );
     added += rows.length;
   }

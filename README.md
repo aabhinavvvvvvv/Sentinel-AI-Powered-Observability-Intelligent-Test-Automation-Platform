@@ -121,9 +121,19 @@ python3 -m venv .venv                      # private folder for this project's l
 
 Endpoints:
 - `GET /health` → `{"status":"ok","service":"sentinel-analytics"}`
-- `POST /analyze/{endpoint_id}` → `{endpoint_id, method, hours_scored, findings: [{time, metric, value, baseline, score, severity, explanation}]}` (404 if the endpoint doesn't exist)
+- `POST /analyze/{endpoint_id}` → `{endpoint_id, hours_scored, findings: [{time, metric, value, baseline, score, severity, explanation, method}]}` (404 if the endpoint doesn't exist)
 
-**How anomalies are found** (`method: robust_z_v1`): for each **finished** hour in the last 48 hours, P50 response time of successful checks is compared with the median of the previous up-to-24 hours. Robust z = 0.6745 × (value − median) / MAD (MAD floored at 1 ms). Flagged if z > 3.5 (slower only). `critical` if z ≥ 10, else `warning`. Hours with fewer than 12 hours of history before them aren't judged. This is a **statistical signal, not a diagnosis**, and it has only been tested on made-up data so far. The service connects to Postgres **read-only**; the Node worker saves findings in the `anomalies` table.
+**Detectors** (each finding names its `method`):
+
+| method | Status | Needs | What it does |
+|---|---|---|---|
+| `robust_z_v1` | live | 12 h history | Robust z vs the previous 24 hours (details below) |
+| `same_hour_z_v1` | **shadow** | 5+ days | Robust z vs the same hour on the previous 7 days, cut-off 4.5 |
+| `isolation_forest_v2` | **shadow** | 5 days warm-up + 3 days to learn | Isolation Forest (scikit-learn, contamination 5%) with time-of-day features; trained only on hours before the reported window; never "critical" |
+
+Shadow = it runs live and its findings are saved and shown (tagged SHADOW), but it's still being evaluated on real data. It won on synthetic data (`docs/EXPERIMENTS.md`). The service loads 14 days of history and reports the last 48 finished hours.
+
+**How the live rule finds anomalies** (`method: robust_z_v1`): for each **finished** hour in the last 48 hours, P50 response time of successful checks is compared with the median of the previous up-to-24 hours. Robust z = 0.6745 × (value − median) / MAD (MAD floored at 1 ms). Flagged if z > 3.5 (slower only). `critical` if z ≥ 10, else `warning`. Hours with fewer than 12 hours of history before them aren't judged. This is a **statistical signal, not a diagnosis**, and it has only been tested on made-up data so far. The service connects to Postgres **read-only**; the Node worker saves findings in the `anomalies` table.
 
 Known: pytest shows one `StarletteDeprecationWarning` suggesting `httpx2` instead of `httpx` for the test client. It's harmless today. Switching packages is left for a deliberate, verified change.
 

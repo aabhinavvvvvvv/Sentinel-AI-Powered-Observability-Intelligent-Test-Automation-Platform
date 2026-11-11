@@ -626,6 +626,27 @@ Use this document to preserve what the developer has learned. Update it after ea
 
 ---
 
+### Session 23 — 2026-11-11 — Interview notes + shadow mode
+
+**What we built**
+- `docs/INTERVIEW_NOTES.md`: pitch, architecture, feature stories, debugging stories, real numbers, limits, likely questions.
+- Shadow mode: `analytics/app/shadow.py` runs same-hour statistics and Isolation Forest v2 live. The contract has a per-finding `method`. The dashboard shows "Found by …" plus a SHADOW tag.
+
+**Concepts (simple words)**
+- Shadow mode: a new model runs for real, its answers are recorded and shown as "unproven", and it only gets trusted after evidence.
+- Handle real-world gaps: `nanmedian` ignores missing hours. Re-ran the experiment to prove the change didn't alter results.
+- Rounding can make a correct value look wrong (1.004 → 1.0): test the rule, not the rounded display.
+- "Echo" false alarms: a backward-looking feature (vs previous hour) reacts to a spike *ending*.
+
+**Verification**
+- Python 38 passed. Backend 225/225, typecheck, lint, build OK. Frontend 32/32, build OK.
+- Real: Node `analyzeAll` with the new contract on 8 real endpoints: 0 errors, 0 findings (not enough history yet).
+
+**Next step**
+- Keep all four processes running so history builds up. Next build: Phase 5 prediction experiment (supervised ML) on synthetic data, or Phase 6.
+
+---
+
 ## Concept checklist
 
 Mark a topic complete only when the developer can explain it in their own words and connect it to Sentinel.

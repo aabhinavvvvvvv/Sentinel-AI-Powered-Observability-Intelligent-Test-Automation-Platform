@@ -19,7 +19,7 @@ const scheduler = { schedule: async () => {}, unschedule: async () => {} };
 const testRuns = { enqueue: async () => {}, schedule: async () => {}, unschedule: async () => {} };
 const app = createApp({ db, scheduler, testRuns, logger: silentLogger, healthcheckDbTimeoutMs: 1000 });
 
-const finding = (time: string, value: number) => ({
+const finding = (time: string, value: number, method = "robust_z_v1") => ({
   time,
   metric: "P50 response time",
   value,
@@ -27,6 +27,7 @@ const finding = (time: string, value: number) => ({
   score: 445.2,
   severity: "critical",
   explanation: `P50 response time was ${value} ms ... This is a statistical signal, not a diagnosis.`,
+  method,
 });
 
 let fakePython: Server;
@@ -44,9 +45,14 @@ beforeAll(async () => {
         ? { endpoint_id: 3, findings: "not a list" }
         : {
             endpoint_id: Number(id),
-            method: "robust_z_v1",
             hours_scored: 20,
-            findings: [finding("2026-01-02T06:00:00+00:00", 900), finding("2026-01-02T09:00:00+00:00", 700)],
+            findings:
+              id === "4" // endpoint 4: two detectors flag the SAME hour
+                ? [
+                    finding("2026-01-02T06:00:00+00:00", 900, "robust_z_v1"),
+                    finding("2026-01-02T06:00:00+00:00", 900, "isolation_forest_v2"),
+                  ]
+                : [finding("2026-01-02T06:00:00+00:00", 900), finding("2026-01-02T09:00:00+00:00", 700)],
           };
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
   });
@@ -86,6 +92,13 @@ describe("analyzeAll", () => {
     expect(summary.errors.map((e) => e.endpointId)).toEqual([2, 3]);
     expect(summary.errors[0]!.message).toBe("analytics service answered HTTP 500");
     expect(await db.query("SELECT * FROM anomalies WHERE endpoint_id = 3")).toEqual([]); // nothing saved from a bad answer
+  });
+
+  it("keeps one finding per detector when several flag the same hour (shadow mode)", async () => {
+    for (let i = 0; i < 4; i++) await addEndpoint({ paused: i !== 3 }); // only endpoint 4 is active
+    expect((await analyzeAll(db, fakeUrl)).newAnomalies).toBe(2);
+    const methods = await db.query<{ method: string }>("SELECT method FROM anomalies ORDER BY method");
+    expect(methods.map((m) => m.method)).toEqual(["isolation_forest_v2", "robust_z_v1"]);
   });
 
   it("skips paused endpoints", async () => {

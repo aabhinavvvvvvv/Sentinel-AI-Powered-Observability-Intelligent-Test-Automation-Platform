@@ -6,7 +6,7 @@ import { useCallback, useState } from "react";
 import { Link, useParams } from "react-router";
 import { api } from "../api";
 import { StatsPanel } from "../components/StatsPanel";
-import { endpointStatus, formatDuration, localTime, STATUS_LABEL, timeAgo } from "../status";
+import { endpointStatus, formatDuration, localTime, methodLabel, STATUS_LABEL, timeAgo } from "../status";
 import { usePolling } from "../usePolling";
 
 const CHECKS_SHOWN = 50;
@@ -106,9 +106,9 @@ export function EndpointDetail() {
       <section>
         <h2>Unusual behaviour</h2>
         <p className="muted small">
-          Hours that were much slower than this website's normal (compared with the previous 24 hours). These are
-          statistical signals, not diagnoses: they say <em>what</em> looked unusual, not <em>why</em>. Needs at least
-          12 hours of history. Checked once an hour.
+          Hours that were much slower than this website's normal. These are statistical signals, not diagnoses: they
+          say <em>what</em> looked unusual, not <em>why</em>. Checked once an hour. <strong>SHADOW</strong> =
+          a newer detector still being evaluated on real data (it needs 5+ days of history before it says anything).
         </p>
         {anomalies.length === 0 ? (
           <p className="muted">Nothing unusual found.</p>
@@ -124,6 +124,10 @@ export function EndpointDetail() {
                   <span className="muted small">
                     {a.metric}: {Math.round(a.value)} ms vs normal {Math.round(a.baseline)} ms · score {a.score}
                   </span>
+                </div>
+                <div className="small">
+                  Found by: {methodLabel(a.method).name}{" "}
+                  {methodLabel(a.method).shadow && <span className="badge pending">SHADOW</span>}
                 </div>
                 <div className="small">{a.explanation}</div>
               </li>

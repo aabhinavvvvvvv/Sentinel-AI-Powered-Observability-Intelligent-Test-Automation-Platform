@@ -12,13 +12,15 @@ def same_hour_baseline(values: pd.Series, days: int = 7, min_days: int = 5) -> t
     """
     For every hour: the median and MAD of the SAME hour of day on the previous `days` days
     (e.g. for Tuesday 13:00, the 13:00 values of the 7 days before). NaN until `min_days` exist.
+    Missing hours (NaN, e.g. the worker was off) are skipped, not treated as zero.
     """
     medians, mads = [], []
     for hour in range(24):
         same_hour = values[values.index.hour == hour]  # e.g. every 13:00, oldest first
         history = same_hour.shift(1).rolling(days, min_periods=min_days)  # previous days only
         medians.append(history.median())
-        mads.append(history.apply(lambda w: np.median(np.abs(w - np.median(w))), raw=True))
+        # nanmedian = median that ignores missing values
+        mads.append(history.apply(lambda w: np.nanmedian(np.abs(w - np.nanmedian(w))), raw=True))
     # Put the 24 pieces back in time order.
     return pd.concat(medians).sort_index(), pd.concat(mads).sort_index()
 

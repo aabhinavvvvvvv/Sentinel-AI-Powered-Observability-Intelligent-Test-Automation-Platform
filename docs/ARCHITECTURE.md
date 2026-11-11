@@ -405,6 +405,14 @@ sequenceDiagram
 - Dashboard: "Unusual behaviour" section on the website page (value vs normal, score, severity, explanation, "signal, not diagnosis").
 - Real data so far: each endpoint has only 3–5 hours of checks, so `hours_scored = 0` (the 12-hour minimum) and no anomalies yet. The detector is **not evaluated on real data**.
 
+### Shadow mode (Phase 5)
+
+- `analytics/app/shadow.py` runs two more detectors live: `same_hour_z_v1` (same hour on the previous 7 days, cut-off 4.5) and `isolation_forest_v2` (contamination 5%, engineered features, trained on hours **before** the 48-hour report window, at least 72 usable training hours). Both reuse `ml/detectors.py`, the same code that was evaluated.
+- The service loads **14 days** of hourly data but reports only the last **48 finished hours**. The same-hour maths uses `nanmedian`, so missing hours (worker off) are skipped (verified: experiment results unchanged).
+- **Contract change:** `method` moved from the response into **each finding**. The `UNIQUE (endpoint_id, metric, bucket_start, method)` key lets several detectors flag the same hour.
+- Dashboard: "Found by: …" per finding, plus a SHADOW tag for unproven detectors (unknown methods are treated as unproven).
+- **Purpose:** collect real-data evidence before promoting anything. Known quirk to watch: Isolation Forest's "echo" false alarm on the hour after a spike (see `docs/EXPERIMENTS.md`).
+
 ## 12. Local infrastructure
 
 `docker-compose.yml` runs, all on `127.0.0.1` only:

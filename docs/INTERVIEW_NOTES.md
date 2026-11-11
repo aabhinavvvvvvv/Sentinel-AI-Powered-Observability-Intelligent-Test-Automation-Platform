@@ -14,7 +14,7 @@ Every number here comes from a real test run or experiment in this repo. Don't r
 > synthetic data, and showed that feature engineering doubled the ML model's F1, from 0.44 to 0.86.
 > It's Node/TypeScript, PostgreSQL, Redis/BullMQ, React, and Python/FastAPI, with about 300 automated tests."
 
-Test counts at the time of writing: backend 224, frontend 31, Python 34.
+Test counts at the time of writing: backend 225, frontend 32, Python 38.
 
 ---
 
@@ -92,9 +92,11 @@ Browser (React) ──/api──▶ Node/Express API ──▶ PostgreSQL  (sour
 | Same-hour statistics | 0.88 | 0.93 | 0.85 |
 
    A tie with different personalities: statistics give fewer false alarms, ML gives fewer misses.
-8. **What I did next:** run both live in **shadow mode** (saved and labelled, not trusted yet) to compare on real data.
+8. **Shadow mode (built):** both now run live every hour next to the old rule. Each finding is saved with its `method` and shown with a SHADOW tag; nothing is promoted until real data supports it. Building it surfaced a quirk: Isolation Forest can raise an **"echo" false alarm on the hour right after a spike**, because its "vs previous hour" feature sees a sudden drop. I recorded it rather than quietly re-tuning, because changing the model would mean redoing the fair experiment.
 
 **One-line lesson:** "Understanding the data (the daily rhythm) mattered more than the algorithm."
+
+**Interview phrase:** "shadow mode": run a new model live, log its output, compare, and only then let it make decisions. It's how real teams introduce models safely.
 
 ---
 
